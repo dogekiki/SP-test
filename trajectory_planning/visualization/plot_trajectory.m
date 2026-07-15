@@ -14,7 +14,7 @@ function fig = plot_trajectory(results)
 % 输出:
 %   fig - figure 句柄
 
-    fig = figure;
+    fig = gcf; clf(fig);
     hold on; grid on;
 
     % 飞行器轨迹 (蓝实线)

@@ -42,14 +42,14 @@ function test_visualization
                          1*ones(1,N); 0.02*ones(1,N); 0.01*ones(1,N)];
 
     %% 测试1: plot_trajectory
-    fig1 = plot_trajectory(results);
+    figure; fig1 = plot_trajectory(results);
     assert(isa(fig1, 'matlab.ui.Figure') || ishandle(fig1), ...
         'plot_trajectory 应返回有效 figure 句柄');
     assert(isgraphics(fig1), 'plot_trajectory 返回的句柄应为有效图形对象');
     fprintf('  [plot_trajectory] figure 句柄有效 [PASS]\n');
 
     %% 测试2: plot_comparison
-    fig2 = plot_comparison(results, traj_ref);
+    figure; fig2 = plot_comparison(results, traj_ref);
     assert(isa(fig2, 'matlab.ui.Figure') || ishandle(fig2), ...
         'plot_comparison 应返回有效 figure 句柄');
     assert(isgraphics(fig2), 'plot_comparison 返回的句柄应为有效图形对象');
@@ -60,7 +60,7 @@ function test_visualization
     fprintf('  [plot_comparison] figure 句柄有效, 子图数=%d [PASS]\n', numel(ax_children));
 
     %% 测试3: plot_error
-    fig3 = plot_error(results, traj_ref);
+    figure; fig3 = plot_error(results, traj_ref);
     assert(isa(fig3, 'matlab.ui.Figure') || ishandle(fig3), ...
         'plot_error 应返回有效 figure 句柄');
     assert(isgraphics(fig3), 'plot_error 返回的句柄应为有效图形对象');
@@ -72,12 +72,12 @@ function test_visualization
     %% 测试4: plot_trajectory 未拦截场景
     results.intercepted = false;
     results.intercept_dist = 150;
-    fig4 = plot_trajectory(results);
+    figure; fig4 = plot_trajectory(results);
     assert(isgraphics(fig4), 'plot_trajectory (未拦截) 应返回有效 figure 句柄');
     fprintf('  [plot_trajectory] 未拦截场景 [PASS]\n');
 
     %% 测试5: plot_comparison 传空 traj_ref
-    fig5 = plot_comparison(results, []);
+    figure; fig5 = plot_comparison(results, []);
     assert(isgraphics(fig5), 'plot_comparison (空 traj_ref) 应返回有效 figure 句柄');
     fprintf('  [plot_comparison] 空 traj_ref 场景 [PASS]\n');
 

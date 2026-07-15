@@ -43,7 +43,7 @@ function fig = plot_error(results, traj_ref)
     % 航向角误差 wrap 到 [-pi, pi]
     error(5, :) = mod(error(5, :) + pi, 2*pi) - pi;
 
-    fig = figure;
+    fig = gcf; clf(fig);
 
     %% 上子图: 位置误差
     subplot(2, 1, 1);

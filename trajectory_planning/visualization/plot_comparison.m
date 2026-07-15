@@ -14,7 +14,7 @@ function fig = plot_comparison(results, traj_ref)
 
     p = params();
 
-    fig = figure;
+    fig = gcf; clf(fig);
 
     %% 上子图: 3D 对比
     subplot(2, 1, 1);
