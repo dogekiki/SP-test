@@ -1,0 +1,7 @@
+# Git ignore
+.superpowers/
+brainstorm-ui/
+*.asv
+*.mex*
+*.mat
+*.fig
