@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自动化开发工作流</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans CJK SC', sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    min-height: 100vh;
+}
+.container { max-width: 900px; margin: 0 auto; padding: 20px; }
+
+/* 需求输入 */
+.request-card {
+    background: #1a1d27; border-radius: 12px; padding: 32px;
+    margin-bottom: 20px; border: 1px solid #2a2d37; text-align: center;
+}
+.request-card h2 { color: #4fc3f7; font-size: 22px; margin-bottom: 8px; }
+.request-card p { color: #888; font-size: 14px; margin-bottom: 24px; }
+.request-input {
+    width: 100%; background: #252830; border: 2px solid #2a2d37;
+    border-radius: 8px; padding: 16px 20px; color: #e0e0e0;
+    font-size: 16px; font-family: inherit; resize: vertical;
+    min-height: 80px; transition: border-color 0.2s; text-align: left;
+}
+.request-input:focus { outline: none; border-color: #4fc3f7; }
+.request-btn {
+    background: #4fc3f7; color: #0f1117; border: none; border-radius: 8px;
+    padding: 14px 40px; font-size: 16px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; margin-top: 16px; font-family: inherit;
+}
+.request-btn:hover { background: #29b6f6; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(79, 195, 247, 0.3); }
+.request-btn:disabled { background: #2a2d37; color: #555; cursor: not-allowed; transform: none; }
+
+/* 进度条 */
+.progress-bar { background: #1a1d27; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; border: 1px solid #2a2d37; }
+.progress-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.step-name { font-size: 16px; font-weight: 600; color: #4fc3f7; }
+.step-counter { font-size: 14px; color: #888; }
+.progress-track { height: 6px; background: #2a2d37; border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, #4fc3f7, #29b6f6); transition: width 0.5s ease; border-radius: 3px; }
+.status-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-left: 10px; }
+.status-idle { background: #3a3d47; color: #888; }
+.status-in_progress, .status-executing, .status-starting, .status-waiting { background: #1a3a5a; color: #4fc3f7; }
+.status-completed, .status-complete, .status-ready { background: #1a3a2a; color: #66bb6a; }
+.status-error, .status-blocked { background: #3a1a1a; color: #ef5350; }
+
+/* 批次提示 */
+.batch-notice {
+    background: #1a2a3a; border: 2px solid #4fc3f7; border-radius: 8px;
+    padding: 16px 20px; margin-bottom: 20px; text-align: center;
+    font-size: 15px; color: #4fc3f7;
+}
+.batch-complete {
+    background: #1a3a2a; border: 2px solid #66bb6a; border-radius: 8px;
+    padding: 20px; margin-bottom: 20px; text-align: center;
+    font-size: 16px; color: #66bb6a; font-weight: 600;
+}
+.batch-complete .hint { font-size: 13px; color: #888; font-weight: 400; margin-top: 8px; }
+
+/* 问题卡片 */
+.question-list { display: flex; flex-direction: column; gap: 16px; margin-bottom: 20px; }
+.q-card {
+    background: #1a1d27; border-radius: 12px; padding: 24px;
+    border: 1px solid #2a2d37; transition: border-color 0.3s;
+}
+.q-card.answered { border-color: #66bb6a; }
+.q-card.current { border-color: #4fc3f7; box-shadow: 0 0 0 1px #4fc3f7; }
+.q-meta { font-size: 12px; color: #666; margin-bottom: 10px; display: flex; justify-content: space-between; }
+.q-index { color: #4fc3f7; font-weight: 600; }
+.q-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+.q-status-pending { background: #3a3d47; color: #888; }
+.q-status-answered { background: #1a3a2a; color: #66bb6a; }
+.q-text { font-size: 16px; line-height: 1.7; color: #e0e0e0; margin-bottom: 16px; white-space: pre-wrap; }
+
+.options { display: flex; flex-direction: column; gap: 8px; }
+.option-btn {
+    background: #252830; border: 2px solid #2a2d37; border-radius: 8px;
+    padding: 12px 18px; color: #e0e0e0; font-size: 14px; cursor: pointer;
+    transition: all 0.2s; text-align: left; font-family: inherit;
+}
+.option-btn:hover { border-color: #4fc3f7; background: #1e2a3a; }
+.option-btn.selected { border-color: #4fc3f7; background: #1a3a5a; }
+.option-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.text-input {
+    width: 100%; background: #252830; border: 2px solid #2a2d37; border-radius: 8px;
+    padding: 12px 18px; color: #e0e0e0; font-size: 14px; font-family: inherit;
+    resize: vertical; min-height: 60px; transition: border-color 0.2s;
+}
+.text-input:focus { outline: none; border-color: #4fc3f7; }
+.text-input:disabled { opacity: 0.5; }
+
+.q-submit {
+    background: #4fc3f7; color: #0f1117; border: none; border-radius: 8px;
+    padding: 10px 28px; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; margin-top: 12px; font-family: inherit;
+}
+.q-submit:hover { background: #29b6f6; transform: translateY(-1px); }
+.q-submit:disabled { background: #2a2d37; color: #555; cursor: not-allowed; transform: none; }
+
+.q-answered-text { font-size: 14px; color: #66bb6a; padding: 8px 12px; background: #1a2a1a; border-radius: 6px; }
+
+/* 等待 */
+.waiting { display: flex; align-items: center; justify-content: center; min-height: 120px; color: #555; font-size: 16px; }
+.waiting .spinner {
+    width: 24px; height: 24px; border: 3px solid #2a2d37;
+    border-top-color: #4fc3f7; border-radius: 50%;
+    animation: spin 0.8s linear infinite; margin-right: 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 日志 */
+.log-section { background: #1a1d27; border-radius: 12px; padding: 20px; border: 1px solid #2a2d37; }
+.log-title { font-size: 14px; font-weight: 600; color: #888; margin-bottom: 12px; display: flex; justify-content: space-between; }
+.log-list { max-height: 200px; overflow-y: auto; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 13px; line-height: 1.6; }
+.log-entry { padding: 4px 0; border-bottom: 1px solid #1e2128; display: flex; gap: 10px; }
+.log-time { color: #555; flex-shrink: 0; }
+.log-type-info { color: #4fc3f7; }
+.log-type-success { color: #66bb6a; }
+.log-type-warning { color: #ffa726; }
+.log-type-error { color: #ef5350; }
+.log-message { color: #ccc; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #1a1d27; }
+::-webkit-scrollbar-thumb { background: #3a3d47; border-radius: 3px; }
+
+/* 历史 */
+.history-section { margin-top: 20px; }
+.history-item { background: #1e2128; border-radius: 6px; padding: 12px 16px; margin-bottom: 8px; border-left: 3px solid #4fc3f7; }
+.history-q { font-size: 13px; color: #888; margin-bottom: 4px; }
+.history-a { font-size: 14px; color: #e0e0e0; }
+.request-submitted { color: #66bb6a; font-size: 15px; padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+    <!-- 需求输入 -->
+    <div class="request-card" id="requestCard">
+        <h2>自动化开发工作流</h2>
+        <p>输入需求,在 TRAE 中输入"继续"启动流程。每次 TRAE 会批量提问,回答完后在 TRAE 中输入"确认"</p>
+        <textarea class="request-input" id="requestInput" placeholder="例如: 设计一个飞行器三自由度仿真程序" oninput="document.getElementById('requestBtn').disabled = !this.value.trim()"></textarea>
+        <br>
+        <button class="request-btn" id="requestBtn" onclick="submitRequest()" disabled>提交需求</button>
+    </div>
+
+    <!-- 进度条 -->
+    <div class="progress-bar" id="progressBar" style="display:none">
+        <div class="progress-info">
+            <div><span class="step-name" id="stepName">等待启动</span><span class="status-badge status-idle" id="statusBadge">idle</span></div>
+            <span class="step-counter" id="stepCounter">0 / 6</span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill" style="width: 0%"></div></div>
+    </div>
+
+    <!-- 批次提示 -->
+    <div id="batchNotice" style="display:none"></div>
+
+    <!-- 问题列表 -->
+    <div class="question-list" id="questionList" style="display:none"></div>
+
+    <!-- 日志 -->
+    <div class="log-section" id="logSection" style="display:none">
+        <div class="log-title"><span>执行日志</span><span id="logCount" style="font-weight:400;color:#555">0 条</span></div>
+        <div class="log-list" id="logList"><div style="color:#555;padding:8px 0">暂无日志</div></div>
+    </div>
+
+    <!-- 历史 -->
+    <div class="log-section history-section" id="historySection" style="display:none">
+        <div class="log-title"><span>问答历史</span></div>
+        <div id="historyList"><div style="color:#555;padding:8px 0">暂无记录</div></div>
+    </div>
+</div>
+
+<script>
+let currentBatchId = 0;
+let questionStates = {}; // {id: {selectedOption, answered}}
+
+async function submitRequest() {
+    const text = document.getElementById('requestInput').value.trim();
+    if (!text) return;
+    document.getElementById('requestBtn').disabled = true;
+    document.getElementById('requestBtn').textContent = '提交中...';
+    try {
+        await fetch('/api/request', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({request: text}) });
+        document.getElementById('requestCard').innerHTML = '<div class="request-submitted">需求已提交: ' + escapeHtml(text) + '<br><br>请在 TRAE 对话框中输入 <strong>"继续"</strong> 启动工作流</div>';
+        document.getElementById('progressBar').style.display = 'block';
+        document.getElementById('logSection').style.display = 'block';
+        document.getElementById('historySection').style.display = 'block';
+    } catch (e) {
+        alert('提交失败: ' + e.message);
+        document.getElementById('requestBtn').disabled = false;
+        document.getElementById('requestBtn').textContent = '提交需求';
+    }
+}
+
+async function poll() {
+    try { await Promise.all([fetchQuestions(), fetchStatus(), fetchLogs(), fetchHistory()]); } catch(e) {}
+}
+
+async function fetchQuestions() {
+    const resp = await fetch('/api/questions');
+    const data = await resp.json();
+    if (data.batch_id !== currentBatchId) {
+        currentBatchId = data.batch_id;
+        questionStates = {};
+        if (data.questions.length > 0) {
+            renderQuestions(data);
+        } else {
+            document.getElementById('questionList').style.display = 'none';
+            document.getElementById('batchNotice').style.display = 'none';
+        }
+    } else if (data.questions.length > 0) {
+        // 更新已回答状态
+        updateAnsweredStatus(data);
+        // 检查是否全部回答完
+        if (data.batch_ready) {
+            showBatchComplete();
+        }
+    }
+}
+
+function renderQuestions(data) {
+    const list = document.getElementById('questionList');
+    const notice = document.getElementById('batchNotice');
+    list.style.display = 'flex';
+    notice.style.display = 'block';
+    notice.className = 'batch-notice';
+    notice.innerHTML = '批次 ' + data.batch_id + ' · ' + data.questions[0].step_name + ' · 共 ' + data.questions.length + ' 个问题,请逐一回答';
+
+    list.innerHTML = data.questions.map((q, i) => {
+        let html = '<div class="q-card" id="qcard_' + q.id + '">';
+        html += '<div class="q-meta"><span class="q-index">问题 ' + (i+1) + '/' + data.questions.length + '</span><span class="q-status q-status-pending" id="qstatus_' + q.id + '">待回答</span></div>';
+        html += '<div class="q-text">' + escapeHtml(q.question) + '</div>';
+        html += '<div id="qbody_' + q.id + '">';
+        if (q.question_type === 'choice' || q.question_type === 'confirm') {
+            html += '<div class="options">';
+            q.options.forEach((opt, j) => {
+                html += '<button class="option-btn" id="opt_' + q.id + '_' + j + '" onclick="selectOption(' + q.id + ',' + j + ')">' + escapeHtml(opt) + '</button>';
+            });
+            html += '</div>';
+            if (q.allow_custom) {
+                html += '<input type="text" class="text-input" id="custom_' + q.id + '" placeholder="或输入自定义回答..." style="margin-top:8px" oninput="clearOption(' + q.id + ')">';
+            }
+            html += '<button class="q-submit" id="qsubmit_' + q.id + '" onclick="submitAnswer(' + q.id + ')" disabled>确认此题</button>';
+        } else {
+            var taId = 'text_' + q.id;
+            var btnId = 'qsubmit_' + q.id;
+            html += '<textarea class="text-input" id="' + taId + '" placeholder="请输入回答..." oninput="var b=document.getElementById(\'' + btnId + '\'); if(b) b.disabled = !this.value.trim();"></textarea>';
+            html += '<button class="q-submit" id="' + btnId + '" onclick="submitAnswer(' + q.id + ')" disabled>确认此题</button>';
+        }
+        html += '</div></div>';
+        return html;
+    }).join('');
+}
+
+function updateAnsweredStatus(data) {
+    // 不重新渲染已渲染的问题,只更新状态
+    data.questions.forEach(q => {
+        const card = document.getElementById('qcard_' + q.id);
+        if (!card) return;
+        const isAnswered = data.answers && data.answers[String(q.id)] !== undefined;
+        if (isAnswered && !card.classList.contains('answered')) {
+            card.classList.add('answered');
+            const status = document.getElementById('qstatus_' + q.id);
+            if (status) { status.className = 'q-status q-status-answered'; status.textContent = '已回答'; }
+            const body = document.getElementById('qbody_' + q.id);
+            if (body) {
+                body.innerHTML = '<div class="q-answered-text">回答: ' + escapeHtml(data.answers[String(q.id)]) + '</div>';
+            }
+        }
+    });
+}
+
+function showBatchComplete() {
+    const notice = document.getElementById('batchNotice');
+    notice.className = 'batch-complete';
+    notice.innerHTML = '所有问题已回答完毕<div class="hint">请在 TRAE 对话框中输入 <strong>"确认"</strong> 继续</div>';
+}
+
+function selectOption(qid, optIdx) {
+    document.querySelectorAll('#qcard_' + qid + ' .option-btn').forEach(b => b.classList.remove('selected'));
+    document.getElementById('opt_' + qid + '_' + optIdx).classList.add('selected');
+    if (!questionStates[qid]) questionStates[qid] = {};
+    questionStates[qid].selectedOption = optIdx;
+    document.getElementById('qsubmit_' + qid).disabled = false;
+    const custom = document.getElementById('custom_' + qid);
+    if (custom) custom.value = '';
+}
+
+function clearOption(qid) {
+    document.querySelectorAll('#qcard_' + qid + ' .option-btn').forEach(b => b.classList.remove('selected'));
+    if (!questionStates[qid]) questionStates[qid] = {};
+    questionStates[qid].selectedOption = null;
+    const custom = document.getElementById('custom_' + qid);
+    document.getElementById('qsubmit_' + qid).disabled = !custom.value.trim();
+}
+
+async function submitAnswer(qid) {
+    let answer = '';
+    const data = await (await fetch('/api/questions')).json();
+    const q = data.questions.find(x => x.id === qid);
+    if (!q) return;
+
+    if (q.question_type === 'choice' || q.question_type === 'confirm') {
+        const custom = document.getElementById('custom_' + qid);
+        if (custom && custom.value.trim()) { answer = custom.value.trim(); }
+        else if (questionStates[qid] && questionStates[qid].selectedOption !== null && questionStates[qid].selectedOption !== undefined) {
+            answer = q.options[questionStates[qid].selectedOption];
+        } else { return; }
+    } else {
+        answer = document.getElementById('text_' + qid).value.trim();
+        if (!answer) return;
+    }
+
+    document.getElementById('qsubmit_' + qid).disabled = true;
+    document.getElementById('qsubmit_' + qid).textContent = '提交中...';
+
+    try {
+        const resp = await fetch('/api/answer', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({question_id: qid, answer: answer}) });
+        const result = await resp.json();
+        if (result.batch_ready) { showBatchComplete(); }
+        // 立即更新此问题状态
+        const card = document.getElementById('qcard_' + qid);
+        if (card) card.classList.add('answered');
+        const status = document.getElementById('qstatus_' + qid);
+        if (status) { status.className = 'q-status q-status-answered'; status.textContent = '已回答'; }
+        const body = document.getElementById('qbody_' + qid);
+        if (body) body.innerHTML = '<div class="q-answered-text">回答: ' + escapeHtml(answer) + '</div>';
+    } catch (e) {
+        alert('提交失败: ' + e.message);
+        var btn = document.getElementById('qsubmit_' + qid);
+        if (btn) { btn.disabled = false; btn.textContent = '确认此题'; }
+    }
+}
+
+async function fetchStatus() {
+    const resp = await fetch('/api/status');
+    const s = await resp.json();
+    document.getElementById('stepName').textContent = s.step_name || '等待启动';
+    document.getElementById('stepCounter').textContent = s.step + ' / ' + s.total_steps;
+    const pct = s.total_steps > 0 ? (s.step / s.total_steps * 100) : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    const badge = document.getElementById('statusBadge');
+    badge.textContent = s.status;
+    badge.className = 'status-badge status-' + s.status;
+}
+
+async function fetchLogs() {
+    const resp = await fetch('/api/logs');
+    const data = await resp.json();
+    const list = document.getElementById('logList');
+    document.getElementById('logCount').textContent = data.logs.length + ' 条';
+    if (data.logs.length === 0) { list.innerHTML = '<div style="color:#555;padding:8px 0">暂无日志</div>'; return; }
+    list.innerHTML = data.logs.map(l => '<div class="log-entry"><span class="log-time">' + l.timestamp + '</span><span class="log-type-' + l.type + '">[' + l.type + ']</span><span class="log-message">' + escapeHtml(l.message) + '</span></div>').join('');
+    list.scrollTop = list.scrollHeight;
+}
+
+async function fetchHistory() {
+    const resp = await fetch('/api/history');
+    const data = await resp.json();
+    const list = document.getElementById('historyList');
+    if (data.history.length === 0) { list.innerHTML = '<div style="color:#555;padding:8px 0">暂无记录</div>'; return; }
+    list.innerHTML = data.history.map(h => '<div class="history-item"><div class="history-q">[' + h.step_name + '] Q: ' + escapeHtml(h.question.substring(0,120)) + (h.question.length>120?'...':'') + '</div><div class="history-a">A: ' + escapeHtml(h.answer) + '</div></div>').join('');
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;').replace(/\n/g,'<br>');
+}
+
+setInterval(poll, 2000);
+poll();
+</script>
+</body>
+</html>

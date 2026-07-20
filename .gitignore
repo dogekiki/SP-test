@@ -5,3 +5,6 @@ brainstorm-ui/
 *.mex*
 *.mat
 *.fig
+
+# 过程文件
+.trae-html-share-packages/
