@@ -1,4 +1,4 @@
-# 自动化开发工作流编排提示词 v7.1
+# 自动化开发工作流编排提示词 v8.0
 
 > **Skill 驱动问题生成 · WebSocket 实时交互 · 双技能包协同 · 审阅全覆盖 · 交互精简 · MCP 自动切换**
 > 用户输入研究方向 → ARIS skill 链产出文档 + 研究级审阅 → SP skill 链产出代码 + 三层代码审阅 → ARIS 实验级审阅 + 论文级审计栈
@@ -118,9 +118,33 @@ POST /api/log     — 记录日志(自动推送WebSocket)
 1. GET /api/request 获取用户需求
    若返回 has_request=false,告诉用户"请先在浏览器前端提交需求"
 2. POST /api/status: step=0, step_name="需求分析", status="in_progress", total_steps=6
-3. POST /api/log: "收到研究方向: <需求内容>"
-4. 分析需求性质,进入交互①
+3. POST /api/log: "收到任务需求: <需求内容>"
+4. 分析需求性质,判定需求类型(详见下方"需求类型判定")
+5. POST /api/log: "需求类型判定: <类型>, <类型说明>"
+6. 根据需求类型进入交互①
 ```
+
+#### 需求类型判定 ★修正1+修正2
+
+Orchestrator 收到需求后,根据需求文本中的关键词判定需求类型,后续流程根据类型自动调整:
+
+| 需求类型 | 触发关键词 | 对交互①的影响 | 对交互②的影响 | 综合评分 |
+|---------|-----------|--------------|--------------|---------|
+| **A: 学术研究**（默认） | 无特殊关键词,或包含"研究""创新""novel"等 | 标准文献调研(research-lit) | 完整运行 2A 新颖性验证 | 含新颖性维度 |
+| **B: 工程实现** ★修正1 | "工程实现""engineering""实现方案""开发""develop" | 标准文献调研(research-lit) | **跳过 2A 新颖性验证**,仅对选题可行性和合理性进行评审 | **不含新颖性维度** |
+| **C: 参考文献实现** ★修正2 | "按照参考文献实现""复现""reproduce""根据论文实现" | **仅研究"参考文献"或类似文件夹**,不足时搜索类似文献 | **跳过 2A 新颖性验证**,后续流程不变 | 不含新颖性维度 |
+
+**判定规则**:
+1. 优先检查类型C关键词(参考文献实现),命中则判定为C
+2. 其次检查类型B关键词(工程实现),命中则判定为B
+3. 未命中则默认为A(学术研究)
+4. 判定结果记录到 `POST /api/log` 并传递给后续所有步骤
+
+**类型C特殊处理(参考文献实现)**:
+- 交互①: 检查项目目录下是否存在"参考文献""references""papers"等文件夹
+  - 若存在: 仅对这些文件夹内的文献进行学习研究,不调用 research-lit 的全网搜索
+  - 若不存在或不足以支撑实现: 搜索类似文献补充,POST /api/log 记录补充搜索
+- 交互②: 跳过 2A 新颖性验证(因为复现不需要新颖性),2B-2D 正常运行
 
 ---
 
@@ -128,13 +152,32 @@ POST /api/log     — 记录日志(自动推送WebSocket)
 
 **目标**：通过 research-lit 和 idea-creator 产出文献综述和 idea 列表,用户一次性选择 idea
 **参考 Runbook Workflow 1**: research-lit → idea-creator
+**需求类型适配**: 根据步骤0判定的需求类型调整文献调研方式
 
 #### 1A：文献调研
 
 ```
-使用 Skill 工具: name="research-lit"
-skill 参数: 用户的原始需求方向
-skill 产出: 文献综述(论文表格、景观分析、研究空白) → 存为 lit_review.md
+需求类型 A (学术研究, 默认):
+  使用 Skill 工具: name="research-lit"
+  skill 参数: 用户的原始需求方向
+  skill 产出: 文献综述(论文表格、景观分析、研究空白) → 存为 lit_review.md
+
+需求类型 B (工程实现):
+  使用 Skill 工具: name="research-lit"
+  skill 参数: 用户的原始需求方向(同A,标准文献调研)
+  skill 产出: 文献综述 → 存为 lit_review.md
+
+需求类型 C (参考文献实现) ★修正2:
+  1. 检查项目目录下是否存在"参考文献""references""papers"等文件夹
+     - 使用 LS 工具扫描项目根目录
+  2. 若存在参考文献文件夹:
+     - 仅对这些文件夹内的文献进行学习研究
+     - POST /api/log: "检测到参考文献文件夹,仅研究本地文献"
+     - 读取文件夹内所有文献(PDF/MD等),生成文献综述 → 存为 lit_review.md
+  3. 若不存在或不足以支撑实现:
+     - POST /api/log: "本地参考文献不足,补充搜索类似文献"
+     - 使用 research-lit 搜索与需求方向相关的类似文献
+     - 合并本地文献和搜索结果 → 存为 lit_review.md
 ```
 
 #### 1B：idea 生成
@@ -164,22 +207,42 @@ GET /api/wait_answers?timeout=300
 
 **目标**：通过 novelty-check → research-review → research-refine → experiment-plan 串联运行,用户在末端一次性确认研究方案和实验计划
 **参考 Runbook Workflow 1**: novelty-check → research-review → research-refine-pipeline
+**需求类型适配**: 根据步骤0判定的需求类型决定是否运行 2A 新颖性验证
 
-#### 2A：新颖性验证 ★审阅补全
+#### 2A：新颖性验证 ★审阅补全 ★修正1+修正2(可选跳过)
 
 ```
-使用 Skill 工具: name="novelty-check"
-skill 参数: 用户选择的 top idea(来自交互①的回答)
-skill 产出: 新颖性验证报告(NOVELTY_CHECK.md)
+需求类型 A (学术研究, 默认):
+  使用 Skill 工具: name="novelty-check"
+  skill 参数: 用户选择的 top idea(来自交互①的回答)
+  skill 产出: 新颖性验证报告(NOVELTY_CHECK.md)
+  POST /api/log: "novelty-check 完成,新颖性评分: <得分>"
+
+需求类型 B (工程实现) ★修正1:
+  跳过 novelty-check(工程实现不需要新颖性验证)
+  仅对选题可行性和合理性进行评审
+  POST /api/log: "需求类型B(工程实现),跳过新颖性验证,仅评审可行性和合理性"
+  综合评分不含新颖性维度(在2B评审中调整评分维度)
+
+需求类型 C (参考文献实现) ★修正2:
+  跳过 novelty-check(复现不需要新颖性)
+  POST /api/log: "需求类型C(参考文献实现),跳过新颖性验证"
+  后续流程(2B-2D)不变
 ```
 
-#### 2B：深度研究评审 ★审阅补全
+#### 2B：深度研究评审 ★审阅补全 ★修正1(评分维度调整) ★修正3(得分推送)
 
 ```
 使用 Skill 工具: name="research-review"
 skill 参数: 用户选择的 idea + NOVELTY_CHECK.md(自动读取,无需用户中转)
+  - 需求类型B/C: 无 NOVELTY_CHECK.md(因2A跳过),评审 prompt 中不含新颖性维度
 skill 行为: 深度技术评审(多轮对话,推理等级 ultra)
+  - 需求类型A: 评审维度含新颖性(方法创新性、理论贡献)
+  - 需求类型B: 评审维度不含新颖性,仅评: 可行性、合理性、技术方案完整性、工程价值
+  - 需求类型C: 评审维度不含新颖性,仅评: 复现准确性、方案合理性、实现可行性
 skill 产出: 研究评审报告(RESEARCH_REVIEW.md)
+★修正3 得分推送:
+  POST /api/log: "research-review 评审得分: <总分>/10, 各维度: 可行性=<X>, 合理性=<Y>, ..."
 ```
 
 #### 2C：方案细化
@@ -227,13 +290,15 @@ skill 参数: FINAL_PROPOSAL.md + EXPERIMENT_PLAN.md
 skill 产出: spec 文档(docs/superpowers/specs/SPEC.md)
 ```
 
-#### 3B：spec 审阅 ★审阅补全(强制子 Agent)
+#### 3B：spec 审阅 ★审阅补全(强制子 Agent) ★修正3(得分推送)
 
 ```
 派发 general-purpose 子 Agent,填充 spec-document-reviewer-prompt.md 模板
 审阅对象: docs/superpowers/specs/SPEC.md
 审阅维度: 完整性(占位符/TBD)、一致性(内部矛盾)、清晰度(歧义)、范围(单计划可覆盖)、YAGNI(超建)
 输出: spec_review.md(Status: Approved/Issues Found + Issues + Recommendations)
+★修正3 得分推送:
+  POST /api/log: "spec审阅结果: Status=<Approved/Issues Found>, 完整性=<PASS/WARN>, 一致性=<PASS/WARN>, 清晰度=<PASS/WARN>, 范围=<PASS/WARN>, YAGNI=<PASS/WARN>"
 ```
 
 #### 3C：实现计划
@@ -244,13 +309,15 @@ skill 参数: SPEC.md + spec_review.md(自动读取审阅反馈)
 skill 产出: 实现计划(docs/superpowers/plans/PLAN.md)
 ```
 
-#### 3D：plan 审阅 ★审阅补全(强制子 Agent)
+#### 3D：plan 审阅 ★审阅补全(强制子 Agent) ★修正3(得分推送)
 
 ```
 派发 general-purpose 子 Agent,填充 plan-document-reviewer-prompt.md 模板
 审阅对象: docs/superpowers/plans/PLAN.md
 审阅维度: 完整性(占位符/缺步骤)、spec 对齐(覆盖需求/无范围蔓延)、任务分解(边界清晰/可执行)、可构建性
 输出: plan_review.md(Status: Approved/Issues Found + Issues + Recommendations)
+★修正3 得分推送:
+  POST /api/log: "plan审阅结果: Status=<Approved/Issues Found>, 完整性=<PASS/WARN>, spec对齐=<PASS/WARN>, 任务分解=<PASS/WARN>, 可构建性=<PASS/WARN>"
 ```
 
 #### 提问批次③
@@ -274,7 +341,7 @@ GET /api/wait_answers?timeout=300
 
 **目标**：通过 subagent-driven-development 实现代码（内置三层审阅）, verification-before-completion 验证,用户确认实现完成
 
-#### 4A：子 Agent 驱动开发
+#### 4A：子 Agent 驱动开发 ★修正3(得分推送)
 
 ```
 使用 Skill 工具: name="subagent-driven-development"
@@ -285,9 +352,13 @@ skill 行为:
   3. 每任务后派发 task-reviewer 子 Agent(spec 合规 + 代码质量双裁决)
   4. 所有任务完成后派发 final code-reviewer 子 Agent(全分支宽范围审阅,用最强模型)
 skill 产出: 可执行代码 + 测试 + metrics.json
+★修正3 得分推送(每任务审阅后):
+  POST /api/log: "task-reviewer 任务<N>: spec合规=<PASS/WARN/FAIL>, 代码质量=<PASS/WARN/FAIL>"
+★修正3 得分推送(全局审阅后):
+  POST /api/log: "final code-reviewer 全局审阅: 覆盖率=<X>%, 测试通过率=<X>%, 代码质量=<评分>"
 ```
 
-#### 4B：完成前验证 ★审阅补全
+#### 4B：完成前验证 ★审阅补全 ★修正3(得分推送)
 
 ```
 使用 Skill 工具: name="verification-before-completion"
@@ -298,6 +369,8 @@ skill 行为: 声明完成前必须跑验证命令并确认输出
   - 需求覆盖
   - Agent 委托产物验证
 skill 输出: verification_report.md(新鲜证据)
+★修正3 得分推送:
+  POST /api/log: "verification 结果: 测试=<PASS/FAIL>, lint=<PASS/FAIL>, 构建=<PASS/FAIL>, 需求覆盖=<X>%, 委托验证=<PASS/FAIL>"
 ```
 
 #### 提问批次④
@@ -340,7 +413,7 @@ skill 行为: 执行实验,监控进度
 skill 产出: 实验结果 + metrics.json
 ```
 
-#### 5C：实验诚信审计 ★审阅补全
+#### 5C：实验诚信审计 ★审阅补全 ★修正3(得分推送)
 
 ```
 使用 Skill 工具: name="experiment-audit"
@@ -353,9 +426,11 @@ skill 行为: 6 项诚信检查(never blocks, advisory)
   E. Scope Assessment(scope 评估)
   F. Evaluation Type Classification(评估类型)
 skill 产出: EXPERIMENT_AUDIT.md + EXPERIMENT_AUDIT.json(verdict + claim impact)
+★修正3 得分推送:
+  POST /api/log: "experiment-audit 审计结果: 总体判定=<PASS/WARN/FAIL>, A=<状态>, B=<状态>, C=<状态>, D=<状态>, E=<状态>, F=<状态>"
 ```
 
-#### 5D：自动评审循环 ★审阅补全(Workflow 2)
+#### 5D：自动评审循环 ★审阅补全(Workflow 2) ★修正3(得分推送)
 
 ```
 使用 Skill 工具: name="auto-review-loop"
@@ -366,12 +441,17 @@ skill 行为:
   - 外部 MCP: mcp_llm-chat（默认；Codex MCP 不可用时自动切换至此，无需手动选择 skill 变体）
   - 停止条件: score >= 6 AND verdict ∈ {ready, almost}
   - MCP 选择策略: 详见 [MCP 自动切换策略](#mcp-自动切换策略)
+  - 需求类型B/C: 评分维度不含新颖性(详见2B的评分维度调整)
 skill 产出:
   - review-stage/AUTO_REVIEW.md(累计日志)
   - review-stage/REVIEW_STATE.json(状态持久化)
+★修正3 得分推送(每轮评审结束后):
+  POST /api/log: "auto-review-loop 第<N>轮: 评分=<X>/10, verdict=<ready/almost/not_ready>"
+  POST /api/log: "auto-review-loop 最终: 评分=<X>/10, verdict=<verdict>, 各维度: <维度明细>"
+  注: 需求类型B/C时,维度明细不含新颖性
 ```
 
-#### 5E：结果→声明映射 ★审阅补全
+#### 5E：结果→声明映射 ★审阅补全 ★修正3(得分推送)
 
 ```
 使用 Skill 工具: name="result-to-claim"
@@ -380,6 +460,8 @@ skill 行为: 判断结果支持什么 claim,路由下一步
   - verdict: claim_supported / partial / not_supported
   - 路由: pivot(转向) / supplement(补充实验) / confirm(确认)
 skill 产出: CLAIMS_FROM_RESULTS.md(已验证的 claims)
+★修正3 得分推送:
+  POST /api/log: "result-to-claim 声明判定: C1=<verdict>, C2=<verdict>, ..., 路由=<pivot/supplement/confirm>"
 ```
 
 #### 提问批次⑤
@@ -404,7 +486,7 @@ GET /api/wait_answers?timeout=300
 **目标**：通过 paper-writing 全流程写论文,四大审计栈审阅,用户一次性确认投稿
 **参考 Runbook Workflow 3**: paper-writing → citation-audit → paper-claim-audit → proof-checker → kill-argument
 
-#### 6A：论文写作全流程（含写作质量循环）
+#### 6A：论文写作全流程（含写作质量循环） ★修正3(得分推送)
 
 ```
 使用 Skill 工具: name="paper-writing"
@@ -416,9 +498,12 @@ skill 行为(5 阶段):
   Phase 4: paper-compile(编译 PDF)
   Phase 5: auto-paper-improvement-loop(2 轮写作质量循环, fresh thread)
 skill 产出: paper/ 目录(论文 PDF + LaTeX 源码)
+★修正3 得分推送(每轮写作质量循环后):
+  POST /api/log: "auto-paper-improvement-loop 第<N>轮: 评分=<X>/10, 关键改进: <摘要>"
+  POST /api/log: "auto-paper-improvement-loop 最终: 评分=<X>/10 → <Y>/10"
 ```
 
-#### 6B：引用审计 ★审阅补全
+#### 6B：引用审计 ★审阅补全 ★修正3(得分推送)
 
 ```
 使用 Skill 工具: name="citation-audit"
@@ -427,9 +512,11 @@ skill 行为: 三层验证(存在性/元数据/上下文)
   - fresh thread per entry(REVIEWER_BIAS_GUARD)
   - WebSearch/WebFetch 强制真实网络查询
 skill 产出: CITATION_AUDIT.md + CITATION_AUDIT.json(verdict: KEEP/FIX/REPLACE/REMOVE)
+★修正3 得分推送:
+  POST /api/log: "citation-audit 审计结果: 总体判定=<PASS/WARN/FAIL>, KEEP=<N>, FIX=<N>, REPLACE=<N>, REMOVE=<N>"
 ```
 
-#### 6C：数字审计 ★审阅补全
+#### 6C：数字审计 ★审阅补全 ★修正3(得分推送)
 
 ```
 使用 Skill 工具: name="paper-claim-audit"
@@ -439,9 +526,11 @@ skill 行为: 7 种失败模式检测
   - aggregation mismatch / delta error / caption-table mismatch / scope overclaim
   - fresh thread every run(零上下文 fresh reviewer)
 skill 产出: PAPER_CLAIM_AUDIT.md + PAPER_CLAIM_AUDIT.json(verdict per claim)
+★修正3 得分推送:
+  POST /api/log: "paper-claim-audit 审计结果: 总体判定=<PASS/WARN/FAIL>, MATCH=<N>, MISMATCH=<N>, UNVERIFIABLE=<N>"
 ```
 
-#### 6D：证明审计(若有数学证明) ★审阅补全
+#### 6D：证明审计(若有数学证明) ★审阅补全 ★修正3(得分推送)
 
 ```
 使用 Skill 工具: name="proof-checker"(仅当论文含 theorem/lemma/proposition)
@@ -450,9 +539,11 @@ skill 行为: 20 类问题分类,两轴严重性(Proof Status × Impact)
   - Phase 3 用 mcp_llm-chat(chat 工具)保持线程,Codex MCP 不可用时自动切换至此
   - Phase 3.5 盲审用 fresh thread(REVIEWER_BIAS_GUARD)
 skill 产出: PROOF_AUDIT.md + PROOF_AUDIT.json + proof_audit_report.tex/.pdf
+★修正3 得分推送:
+  POST /api/log: "proof-checker 审计结果: 总体判定=<PASS/WARN/FAIL>, FATAL=<N>, CRITICAL=<N>, MAJOR=<N>, MINOR=<N>"
 ```
 
-#### 6E：对抗评审 ★审阅补全
+#### 6E：对抗评审 ★审阅补全 ★修正3(得分推送)
 
 ```
 使用 Skill 工具: name="kill-argument"
@@ -463,6 +554,8 @@ skill 行为: 双线程对抗评审
   - 两个 fresh 线程均通过 mcp_llm-chat(chat 工具)独立发起,绝不在同一会话内延续(REVIEWER_BIAS_GUARD)
   - 外部 MCP: mcp_llm-chat（Codex MCP 不可用时自动切换至此）
 skill 产出: KILL_ARGUMENT.md + KILL_ARGUMENT.json(verdict: PASS/WARN/FAIL)
+★修正3 得分推送:
+  POST /api/log: "kill-argument 对抗评审结果: verdict=<PASS/WARN/FAIL>, 攻击轴: <各轴分类>, 未解决问题=<N>"
 ```
 
 #### 提问批次⑥
@@ -636,12 +729,14 @@ GET /api/wait_answers?timeout=300
 2. 若仍失败,使用最简问题: [{"question_type":"confirm","question":"<批次名称>已完成,是否确认继续?","options":["确认","需要修改"],"allow_custom":false}]
 ```
 
-### 场景 3：长轮询超时
+### 场景 3：长轮询超时 ★修复(循环重试,不放弃)
 
 ```
 若 GET /api/wait_answers 返回 timeout=true:
-POST /api/log: "等待回答超时(300秒),请用户尽快回答"
+POST /api/log: "等待回答超时(300秒),自动重新轮询,请用户尽快回答"
 重新 GET /api/wait_answers?timeout=300
+循环重试,最多60次(约5小时),直到收到用户回答
+每次重试间隔记录日志,不因超时放弃
 ```
 
 ### 场景 4：审阅 skill 发现 Critical 问题
@@ -691,3 +786,9 @@ POST /api/log: "实现中发现代码bug,自动启动修复"
 9. **仅一次手动触发**：用户只需在开始时输入"继续",之后所有步骤自动流转
 10. **mcp_llm-chat 多文档**：合并批次中,prompt 包含多个 skill 的文档,提取跨文档关键决策点
 11. **MCP 自动切换**：ARIS 所有涉及外部大模型的 skill 统一使用 `mcp_llm-chat`(chat 工具)作为默认外部 MCP；Codex MCP 不可用时自动切换至 `mcp_llm-chat`，无需手动选择 skill 变体或用户干预（详见 [MCP 自动切换策略](#mcp-自动切换策略)）
+12. **需求类型适配** ★修正1+修正2：步骤0判定需求类型(A学术研究/B工程实现/C参考文献实现),后续交互①②根据类型调整流程
+    - 类型B(工程实现): 跳过 2A 新颖性验证,综合评分不含新颖性维度
+    - 类型C(参考文献实现): 交互①仅研究参考文献文件夹,跳过 2A 新颖性验证
+    - 类型A(学术研究,默认): 完整运行所有步骤
+13. **审阅得分推送** ★修正3：所有审阅环节(2B/3B/3D/4A/4B/5C/5D/5E/6A/6B/6C/6D/6E)的得分必须通过 `POST /api/log` 推送至终端(前端),用户可实时查看各审阅环节的评分和判定结果
+14. **长轮询不放弃** ★修复：等待用户回答时,超时后自动循环重试(最多60次约5小时),不因超时退出
