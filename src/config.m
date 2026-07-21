@@ -7,14 +7,14 @@ function cfg = config()
     cfg.aircraft.CD0 = 0.02;      % 零升阻力系数
     
     % MPC参数
-    cfg.mpc.N = 20;               % 预测时域
+    cfg.mpc.N = 30;               % 预测时域
     cfg.mpc.dt = 0.1;             % 采样时间 [s]
-    cfg.mpc.Q = diag([10,10,10,1,5,5]);  % 状态权重
-    cfg.mpc.R = diag([0.1,1,1]);          % 控制权重
+    cfg.mpc.Q = diag([50,50,50,5,10,10]);  % 状态权重(位置优先)
+    cfg.mpc.R = diag([0.01,0.5,0.5]);       % 控制权重(降低以增强跟踪)
     cfg.mpc.P = [];               % 终端权重(自动计算DARE)
     
     % 约束
-    cfg.constraints.T_min = 10;   cfg.constraints.T_max = 200;
+    cfg.constraints.T_min = -50;  cfg.constraints.T_max = 200;  % 负推力模拟减速板
     cfg.constraints.V_min = 15;   cfg.constraints.V_max = 50;
     cfg.constraints.chi_dot_max = 0.3;
     cfg.constraints.gamma_dot_max = 0.2;

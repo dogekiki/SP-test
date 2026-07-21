@@ -8,3 +8,20 @@ brainstorm-ui/
 
 # 过程文件
 .trae-html-share-packages/
+
+# ARIS/SP 工作流过程文件
+refine-logs/
+idea-stage/
+docs/superpowers/plans/
+docs/superpowers/specs/
+NOVELTY_CHECK.md
+RESEARCH_REVIEW.md
+lit_review.md
+
+# 仿真结果（可重新生成）
+results/
+
+# 临时文件
+*.tmp
+*.bak
+*~

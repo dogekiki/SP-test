@@ -1,0 +1,113 @@
+%==============================================================================
+% 参考轨迹生成
+%==============================================================================
+\section{参考轨迹生成方法}\label{sec:trajectory}
+
+参考轨迹的质量直接影响MPC的跟踪性能。本节介绍基于弧长重参数化与转角平滑的参考轨迹生成方法，包括航向角unwrap处理、转角平滑以及重力补偿。
+
+%------------------------------------------------------------------------------
+% 航点定义与弧长重参数化
+%------------------------------------------------------------------------------
+\subsection{航点定义与弧长重参数化}\label{sec:arc_length}
+
+给定一组有序航点 $\{\mathbf{p}_i\}_{i=0}^{M}$，其中 $\mathbf{p}_i = [p_{x,i},\, p_{y,i},\, p_{z,i}]\trans$ 为第 $i$ 个航点的三维坐标。相邻航点之间以直线段连接，形成分段线性参考路径。
+
+定义路径弧长为各段长度之和：
+\begin{equation}\label{eq:arc_length}
+s_i = \sum_{j=0}^{i-1} \|\mathbf{p}_{j+1} - \mathbf{p}_j\|_2, \quad i = 1, \ldots, M; \quad s_0 = 0
+\end{equation}
+则总弧长为 $s_M$。路径上的任意位置可通过弧长 $s \in [0, s_M]$ 参数化：
+\begin{equation}\label{eq:path_param}
+\mathbf{p}(s) = \mathbf{p}_i + \frac{s - s_i}{s_{i+1} - s_i}(\mathbf{p}_{i+1} - \mathbf{p}_i), \quad s \in [s_i, s_{i+1}]
+\end{equation}
+
+进一步，将弧长 $s$ 表示为时间的函数 $s(t)$。设参考速度为 $V_r$（恒定），则 $s(t) = V_r \cdot t$，参考位置为 $\mathbf{p}_r(t) = \mathbf{p}(V_r \cdot t)$。
+
+弧长重参数化的优势在于：无论路径几何形状如何复杂，参考轨迹在时间轴上保持匀速推进，有利于MPC预测模型的稳定性。
+
+%------------------------------------------------------------------------------
+% 转角平滑
+%------------------------------------------------------------------------------
+\subsection{转角平滑处理}\label{sec:corner_smoothing}
+
+分段线性路径在航点处存在转角突变，导致参考航向角 $\chi_r$ 出现不连续跳变。这种不连续性会使MPC的控制量在转弯处剧烈变化，影响跟踪平滑性。
+
+为消除转角突变，本文在航点处采用圆弧过渡进行平滑。设相邻路径段的方向角分别为 $\chi_i$ 和 $\chi_{i+1}$，转角为 $\Delta\chi_i = \chi_{i+1} - \chi_i$。在航点 $\mathbf{p}_i$ 附近，以转弯半径 $R_t$ 构造圆弧，使航向角从 $\chi_i$ 平滑过渡到 $\chi_{i+1}$。
+
+圆弧过渡段的参数方程为：
+\begin{equation}\label{eq:smooth_arc}
+\mathbf{p}_{\text{arc}}(\theta) = \mathbf{c}_i + R_t \begin{bmatrix} \cos\theta \\ \sin\theta \\ 0 \end{bmatrix}, \quad \theta \in [\theta_{\text{start}},\, \theta_{\text{end}}]
+\end{equation}
+其中 $\mathbf{c}_i$ 为圆弧圆心，$\theta$ 为参数角。圆弧段对应的弧长为 $R_t \cdot |\Delta\chi_i|$，需在总弧长计算~\eqref{eq:arc_length}中予以修正。
+
+经平滑处理后，参考航向角 $\chi_r(t)$ 在全程连续可微，满足 $\dot{\chi}_r \leq \dot{\chi}_{\max}$ 的约束。
+
+%------------------------------------------------------------------------------
+% 航向角 Unwrap
+%------------------------------------------------------------------------------
+\subsection{航向角unwrap处理}\label{sec:unwrap}
+
+航向角 $\chi$ 的取值范围为 $(-\pi, \pi]$ 或 $[0, 2\pi)$，当飞行器穿越 $\pm\pi$ 边界时，航向角会发生 $2\pi$ 的跳变。这种跳变会导致：
+\begin{enumerate}[leftmargin=*]
+    \item 参考航向角 $\chi_r(t)$ 出现不连续；
+    \item MPC代价函数中航向角偏差计算错误；
+    \item Jacobian矩阵中三角函数项突变。
+\end{enumerate}
+
+为此，本文采用航向角unwrap（解卷绕）算法，将航向角展开为连续值。unwrap的核心规则为：当相邻两个参考航向角之差超过 $\pi$ 时，通过加减 $2\pi$ 进行修正：
+\begin{equation}\label{eq:unwrap}
+\chi_r^{\text{unwrap}}(t) = \chi_r(t) + 2\pi \cdot n(t)
+\end{equation}
+其中 $n(t)$ 为整数修正项，使得 $|\chi_r^{\text{unwrap}}(t) - \chi_r^{\text{unwrap}}(t - T_s)| < \pi$ 恒成立。
+
+类似地，在计算跟踪误差时，对实际航向角 $\chi$ 也进行同步unwrap，确保偏差 $\delta\chi = \chi^{\text{unwrap}} - \chi_r^{\text{unwrap}}$ 始终在 $(-\pi, \pi]$ 范围内取最小值。
+
+%------------------------------------------------------------------------------
+% 重力补偿
+%------------------------------------------------------------------------------
+\subsection{重力补偿}\label{sec:gravity_comp}
+
+参考轨迹仅给出了位置和速度的参考值，但未显式给出控制量的参考值 $\bu_r(t)$。为使参考控制满足动力学一致性，需要根据参考状态反解参考控制。
+
+由动力学方程~\eqref{eq:dynamics}的第4个分量，参考推力应满足：
+\begin{equation}\label{eq:thrust_ref}
+\dot{V}_r = \frac{T_r - D(\bx_r)}{m} - g \sin\gamma_r
+\end{equation}
+解得参考推力：
+\begin{equation}\label{eq:thrust_ref_solve}
+T_r = m\dot{V}_r + D(\bx_r) + m g \sin\gamma_r
+\end{equation}
+其中 $\dot{V}_r$ 由参考速度的数值微分获得，$D(\bx_r) = \frac{1}{2}\rho V_r^2 S C_D$ 为参考阻力。式~\eqref{eq:thrust_ref_solve}中的 $mg\sin\gamma_r$ 项即为重力补偿：当航迹角 $\gamma_r > 0$（爬升）时，参考推力自动增加以克服重力分量；当 $\gamma_r < 0$（下降）时，参考推力减小甚至为负（启用减速板）。
+
+参考角速率为：
+\begin{equation}\label{eq:rate_ref}
+\dot{\chi}_r = \frac{d\chi_r^{\text{unwrap}}}{dt}, \quad \dot{\gamma}_r = \frac{d\gamma_r}{dt}
+\end{equation}
+由unwrap后的参考航向角和参考航迹角数值微分获得。
+
+%------------------------------------------------------------------------------
+% 完整轨迹生成算法
+%------------------------------------------------------------------------------
+\subsection{完整轨迹生成算法}
+
+综合以上各步骤，参考轨迹生成的完整流程如算法~\ref{alg:traj_gen}所示。
+
+\begin{algorithm}[htbp]
+\caption{参考轨迹生成}\label{alg:traj_gen}
+\begin{algorithmic}[1]
+\Require 航点序列 $\{\mathbf{p}_i\}_{i=0}^{M}$; 参考速度 $V_r$; 采样周期 $T_s$; 转弯半径 $R_t$
+\Ensure 参考轨迹 $\{\bx_{r,k}\}$, $\{\bu_{r,k}\}$
+\State 计算各段弧长 $s_i$ \Comment{式~\eqref{eq:arc_length}}
+\State 对航点转角进行圆弧平滑 \Comment{式~\eqref{eq:smooth_arc}}
+\State 修正平滑后总弧长
+\State 按弧长重参数化生成参考位置 $\mathbf{p}_r(t)$ \Comment{式~\eqref{eq:path_param}}
+\State 计算参考航向角 $\chi_r(t)$ 和参考航迹角 $\gamma_r(t)$
+\State 对 $\chi_r(t)$ 进行unwrap处理 \Comment{式~\eqref{eq:unwrap}}
+\State 数值微分计算 $\dot{V}_r$, $\dot{\chi}_r$, $\dot{\gamma}_r$
+\State 重力补偿计算参考推力 $T_r$ \Comment{式~\eqref{eq:thrust_ref_solve}}
+\State 组装参考状态 $\bx_{r,k}$ 和参考控制 $\bu_{r,k}$
+\State \Return $\{\bx_{r,k}\}$, $\{\bu_{r,k}\}$
+\end{algorithmic}
+\end{algorithm}
+
+该算法生成的参考轨迹满足以下性质：（1）位置连续且匀速推进；（2）航向角连续可微（经平滑与unwrap处理）；（3）参考控制满足动力学一致性（经重力补偿）；（4）参考推力考虑了负推力能力。这些性质为MPC的有效跟踪提供了基础。

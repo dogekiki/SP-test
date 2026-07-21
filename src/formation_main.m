@@ -13,8 +13,8 @@ waypoints = [0,    0,   100;
 K = size(x_ref, 2);
 
 x_leader = x_ref(:,1);
-x_f1 = x_leader + [cfg.formation.offsets(2,:); 0; 0; 0]';
-x_f2 = x_leader + [cfg.formation.offsets(3,:); 0; 0; 0]';
+x_f1 = x_leader + [cfg.formation.offsets(2,:)'; 0; 0; 0];
+x_f2 = x_leader + [cfg.formation.offsets(3,:)'; 0; 0; 0];
 x_all = [x_leader, x_f1, x_f2];
 
 x_history_leader = zeros(6, K);
@@ -38,12 +38,12 @@ for k = 1:K
     [u_all, info] = formation_controller(x_all, x_ref_window, u_ref_window, cfg);
     
     x_history_leader(:,k) = x_all(:,1);
-    x_history_followers(:,:,1) = x_all(:,2);
-    x_history_followers(:,:,2) = x_all(:,3);
+    x_history_followers(:,k,1) = x_all(:,2);
+    x_history_followers(:,k,2) = x_all(:,3);
     
     for i = 1:2
         offset = cfg.formation.offsets(i+1,:)';
-        expected_pos = x_all(:,1) + [offset; 0; 0; 0]';
+        expected_pos = x_all(:,1) + [offset; 0; 0; 0];
         formation_errors(i,k) = norm(x_all(1:3,i+1) - expected_pos(1:3));
     end
     solve_times(k) = info.max_solve_time;

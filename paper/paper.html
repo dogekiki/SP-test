@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>基于线性时变模型预测控制的飞行器轨迹跟踪与编队方法</title>
+
+<!-- Polyfill for ES6 (required by MathJax v3 on older browsers) -->
+<script src="https://cdn.polyfill.io/v2/polyfill.min.js?features=es6"></script>
+
+<!-- MathJax v3 Configuration -->
+<script>
+MathJax = {
+    tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']],
+        processEscapes: true,
+        tags: 'none'
+    },
+    chtml: {
+        scale: 1.0,
+        matchFontHeight: false
+    },
+    startup: {
+        ready: () => {
+            MathJax.startup.defaultReady();
+            MathJax.startup.promise.then(() => {
+                document.body.classList.add('mathjax-ready');
+            });
+        }
+    }
+};
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+<style>
+/* ========== Global Reset & Base ========== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 70px;
+}
+
+body {
+    background: #ffffff;
+    font-family: "SimSun", "宋体", "Songti SC", serif;
+    font-size: 15px;
+    line-height: 1.85;
+    color: #1a1a1a;
+}
+
+/* ========== Fixed Top Navigation ========== */
+#toc-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 48px;
+    background: #1a2744;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+#toc-nav a {
+    color: #c8d4e8;
+    text-decoration: none;
+    font-family: "SimHei", "黑体", "Heiti SC", sans-serif;
+    font-size: 13px;
+    padding: 0 14px;
+    height: 48px;
+    line-height: 48px;
+    transition: background 0.2s, color 0.2s;
+    flex-shrink: 0;
+}
+
+#toc-nav a:hover {
+    background: #2d3e5f;
+    color: #ffffff;
+}
+
+#toc-nav a.nav-title {
+    font-weight: bold;
+    color: #ffffff;
+    font-size: 14px;
+}
+
+/* ========== Paper Container ========== */
+.paper {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 70px 40px 60px 40px;
+    background: #ffffff;
+}
+
+/* ========== Typography ========== */
+h1 {
+    font-family: "SimHei", "黑体", "Heiti SC", sans-serif;
+    font-size: 22px;
+    text-align: center;
+    line-height: 1.5;
+    margin: 30px 0 20px 0;
+    color: #000;
+}
+
+h2 {
+    font-family: "SimHei", "黑体", "Heiti SC", sans-serif;
+    font-size: 18px;
+    margin: 35px 0 12px 0;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #1a2744;
+    color: #1a2744;
+}
+
+h3 {
+    font-family: "SimHei", "黑体", "Heiti SC", sans-serif;
+    font-size: 16px;
+    margin: 24px 0 8px 0;
+    color: #333;
+}
+
+p {
+    text-align: justify;
+    text-indent: 2em;
+    margin-bottom: 8px;
+}
+
+/* ========== Abstract & Keywords ========== */
+.abstract-box {
+    background: #f7f8fa;
+    border-left: 4px solid #1a2744;
+    padding: 16px 20px;
+    margin: 20px 0;
+}
+
+.abstract-box p {
+    text-indent: 2em;
+    font-size: 14px;
+    line-height: 1.8;
+}
+
+.keywords {
+    margin-top: 10px;
+    font-size: 14px;
+}
+
+.keywords strong {
+    font-family: "SimHei", "黑体", sans-serif;
+}
+
+/* ========== Math Display ========== */
+mjx-container[display="true"] {
+    margin: 12px 0 !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* ========== Tables (booktabs style) ========== */
+.table-wrapper {
+    margin: 16px 0;
+    overflow-x: auto;
+}
+
+table {
+    border-collapse: collapse;
+    margin: 0 auto;
+    font-size: 14px;
+    width: auto;
+}
+
+table caption {
+    caption-side: top;
+    font-family: "SimHei", "黑体", sans-serif;
+    font-size: 14px;
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+th, td {
+    padding: 6px 16px;
+    text-align: center;
+    border: none;
+}
+
+thead tr {
+    border-top: 2px solid #000;
+    border-bottom: 1px solid #000;
+}
+
+tbody tr:last-child {
+    border-bottom: 2px solid #000;
+}
+
+th {
+    font-family: "SimHei", "黑体", sans-serif;
+    font-weight: normal;
+}
+
+td.bold {
+    font-weight: bold;
+}
+
+/* ========== Figures ========== */
+.figure {
+    margin: 20px 0;
+    text-align: center;
+}
+
+.figure img {
+    width: 85%;
+    border: 1px solid #e0e0e0;
+    border-radius: 2px;
+}
+
+.figure-caption {
+    font-family: "SimHei", "黑体", sans-serif;
+    font-size: 14px;
+    margin-top: 8px;
+    text-align: center;
+}
+
+/* ========== Algorithm Block ========== */
+.algorithm {
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    background: #fafafa;
+    font-size: 14px;
+    line-height: 1.8;
+}
+
+.algorithm-title {
+    font-family: "SimHei", "黑体", sans-serif;
+    font-size: 15px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+.algorithm ol {
+    list-style: none;
+    counter-reset: algstep;
+    padding-left: 0;
+}
+
+.algorithm ol li {
+    counter-increment: algstep;
+    padding-left: 30px;
+    position: relative;
+    text-indent: 0;
+    margin-bottom: 2px;
+}
+
+.algorithm ol li::before {
+    content: counter(algstep) ":";
+    position: absolute;
+    left: 0;
+    font-weight: bold;
+}
+
+.algorithm .alg-input,
+.algorithm .alg-output {
+    font-style: italic;
+    text-indent: 0;
+    margin-bottom: 4px;
+}
+
+/* ========== Lists ========== */
+ol.refs {
+    list-style: none;
+    counter-reset: refnum;
+    padding-left: 0;
+}
+
+ol.refs li {
+    counter-increment: refnum;
+    padding-left: 28px;
+    position: relative;
+    text-indent: 0;
+    margin-bottom: 6px;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+ol.refs li::before {
+    content: "[" counter(refnum) "]";
+    position: absolute;
+    left: 0;
+    font-weight: bold;
+}
+
+ul.contrib-list {
+    list-style: none;
+    padding-left: 2em;
+}
+
+ul.contrib-list li {
+    text-indent: 0;
+    margin-bottom: 8px;
+}
+
+/* ========== Equations numbering ========== */
+.eq-num {
+    counter-reset: eqnum;
+}
+
+/* ========== Print ========== */
+@media print {
+    @page {
+        size: A4;
+        margin: 25mm 20mm 25mm 20mm;
+        @top-center {
+            content: "基于线性时变模型预测控制的飞行器轨迹跟踪与编队方法";
+            font-family: "SimSun", serif;
+            font-size: 9pt;
+            color: #666;
+        }
+        @bottom-center {
+            content: counter(page) " / " counter(pages);
+            font-family: "SimSun", serif;
+            font-size: 9pt;
+            color: #666;
+        }
+    }
+    #toc-nav { display: none !important; }
+    body { font-size: 12pt; line-height: 1.6; }
+    .paper {
+        padding: 0;
+        max-width: 100%;
+        margin: 0;
+        box-shadow: none;
+    }
+    h2 {
+        page-break-before: auto;
+        page-break-after: avoid;
+    }
+    h3, h4 {
+        page-break-after: avoid;
+    }
+    .abstract-box {
+        page-break-after: avoid;
+    }
+    table, figure, .figure-box, .table-wrapper {
+        page-break-inside: avoid;
+    }
+    .fig-caption, .table-caption {
+        page-break-before: avoid;
+        page-break-after: avoid;
+    }
+    .ref-list li {
+        page-break-inside: avoid;
+    }
+    h1 {
+        page-break-after: avoid;
+    }
+    .mathjax-ready mjx-container[display="true"] {
+        page-break-inside: avoid;
+    }
+}
+
+/* ========== Screen PDF-like View ========== */
+.pdf-view {
+    background: #f0f0f0;
+    padding: 20px 0;
+}
+.pdf-page {
+    background: white;
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto 20px auto;
+    padding: 25mm 20mm;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== Fixed Top Navigation ==================== -->
+<nav id="toc-nav">
+    <a href="#top" class="nav-title">目录</a>
+    <a href="#abstract">摘要</a>
+    <a href="#sec1">1 引言</a>
+    <a href="#sec2">2 动力学建模</a>
+    <a href="#sec3">3 LTV-MPC设计</a>
+    <a href="#sec4">4 轨迹生成</a>
+    <a href="#sec5">5 仿真实验</a>
+    <a href="#sec6">6 结论</a>
+    <a href="#refs">参考文献</a>
+</nav>
+
+<!-- ==================== Paper Body ==================== -->
+<div class="paper" id="top">
+
+<!-- ==================== Title ==================== -->
+<h1>基于线性时变模型预测控制的飞行器<br>轨迹跟踪与编队方法</h1>
+
+<p style="text-align:center; text-indent:0; font-family:'SimHei','黑体',sans-serif; margin-bottom:30px;">
+作者一 &nbsp; 作者二 &nbsp; 作者三<br>
+<span style="font-size:13px; font-family:'SimSun',serif; font-weight:normal;">（单位名称，城市 邮编）</span>
+</p>
+
+<!-- ==================== Abstract & Keywords ==================== -->
+<div class="abstract-box" id="abstract">
+<p><strong style="font-family:'SimHei','黑体',sans-serif;">摘要：</strong>针对飞行器轨迹跟踪控制中存在的非线性动力学与多变量约束处理问题，本文提出一种基于线性时变模型预测控制（LTV-MPC）的轨迹跟踪方法，并扩展至多机编队飞行场景。首先，建立三自由度（3-DOF）质点动力学模型，通过Jacobian线性化将非线性预测问题转化为二次规划（QP），并利用离散代数Riccati方程（DARE）求解终端权重以保证闭环稳定性。其次，设计基于弧长重参数化与转角平滑的参考轨迹生成算法，对减速板引入的负推力进行建模。最后，将单机LTV-MPC扩展为Leader-Follower编队架构。仿真结果表明：所提方法单步求解耗时1.42&nbsp;ms，轨迹跟踪均方根误差（RMSE）为0.12&nbsp;m，约束满足率100%；相比LQR和PID基线方法，跟踪精度分别提升约3个和2个数量级；3机编队在标称工况下实现协同跟踪。所提方法兼具实时性与跟踪精度，为飞行器编队控制提供了有效方案。</p>
+<p class="keywords"><strong>关键词：</strong>模型预测控制；线性时变系统；轨迹跟踪；编队飞行；二次规划；飞行器控制</p>
+</div>
+
+<!-- ==================== 1. Introduction ==================== -->
+<h2 id="sec1">1 引言</h2>
+
+<h3>1.1 研究背景</h3>
+
+<p>飞行器轨迹跟踪控制是航空领域的核心问题之一，广泛应用于自主飞行、编队协同、空中加油等任务场景<sup>[5,2]</sup>。在实际飞行中，飞行器动力学具有强非线性、多变量耦合以及幅值约束等特征，例如推力受发动机性能限制、航向角速率受结构强度约束。这些因素使得传统线性控制方法难以在复杂机动条件下兼顾跟踪精度与约束满足。</p>
+
+<p>模型预测控制（Model Predictive Control, MPC）作为一种基于优化的控制策略，能够显式处理输入与状态约束，并通过滚动优化实现对未来行为的预测<sup>[1,3]</sup>。自20世纪70年代提出以来，MPC已在过程工业<sup>[5]</sup>、汽车自动驾驶<sup>[7]</sup>以及航空航天等领域得到广泛应用。Mayne<sup>[2]</sup>对MPC的最新发展与未来前景进行了系统综述，指出MPC在处理复杂约束系统方面具有独特优势。</p>
+
+<h3>1.2 相关工作</h3>
+
+<p>在飞行器轨迹跟踪领域，研究者们提出了多种基于MPC的控制方案。根据对非线性动力学的处理方式，主要可分为以下三类：</p>
+
+<p><strong style="font-family:'SimHei',sans-serif;">（1）非线性模型预测控制（NMPC）。</strong> NMPC直接利用非线性动力学模型进行预测优化，理论上可获得最优控制性能。Chen和Allg&ouml;wer<sup>[6]</sup>提出了准无穷时域NMPC方法，通过引入终端约束和终端代价保证稳定性。然而，NMPC每步需求解非线性规划问题，计算量大，难以满足实时性要求。对于飞行器等快动态系统，NMPC的实时实现仍面临挑战。</p>
+
+<p><strong style="font-family:'SimHei',sans-serif;">（2）线性时变模型预测控制（LTV-MPC）。</strong> LTV-MPC通过在参考轨迹附近进行Jacobian线性化，将非线性预测问题转化为一系列二次规划（QP）问题<sup>[10]</sup>。该方法兼顾了非线性动力学的局部精度与QP的高效求解，在实时性与精度之间取得了良好平衡。Falcone等<sup>[7]</sup>将LTV-MPC应用于车辆主动转向控制，验证了其实时可行性。</p>
+
+<p><strong style="font-family:'SimHei',sans-serif;">（3）编队飞行控制。</strong> 多飞行器编队是单机跟踪的自然扩展。Keviczky等<sup>[8]</sup>提出了一种分散式滚动时域控制方法，用于自主飞行器编队的协同控制。Richards和How<sup>[11]</sup>研究了基于MPC的多UAV协同方法。然而，现有编队控制研究多关注防撞与协调策略，对编队内个体轨迹跟踪精度与实时性的综合评估仍有不足。</p>
+
+<h3>1.3 本文贡献</h3>
+
+<p>针对上述问题，本文提出一种基于LTV-MPC的飞行器轨迹跟踪控制方法，并扩展至多机编队场景。主要贡献如下：</p>
+
+<ul class="contrib-list">
+<li>（1）<strong style="font-family:'SimHei',sans-serif;">实时LTV-MPC求解框架。</strong> 基于三自由度质点模型，通过Jacobian线性化与QP重构，将非线性预测问题转化为标准QP形式并利用quadprog高效求解。相比基于fmincon的非线性求解器，求解速度提升约97倍（从138&nbsp;ms降至1.42&nbsp;ms），满足实时控制要求。</li>
+<li>（2）<strong style="font-family:'SimHei',sans-serif;">参考轨迹生成方法。</strong> 设计了基于弧长重参数化与转角平滑的轨迹生成算法，统一处理航向角unwrap与重力补偿问题，并对减速板引入的负推力进行建模，使生成的参考轨迹在动力学上可行。</li>
+<li>（3）<strong style="font-family:'SimHei',sans-serif;">编队扩展与验证。</strong> 将单机LTV-MPC扩展为Leader-Follower编队架构，在标称工况下对3机编队进行了仿真验证，分析了编队跟踪误差分布。</li>
+</ul>
+
+<p>本文其余部分组织如下：第2节建立三自由度动力学模型；第3节详述LTV-MPC控制器设计；第4节介绍参考轨迹生成方法；第5节给出仿真实验与结果分析；第6节总结全文并展望未来工作。</p>
+
+<!-- ==================== 2. Problem Description & Dynamics ==================== -->
+<h2 id="sec2">2 问题描述与动力学建模</h2>
+
+<h3>2.1 坐标系与状态定义</h3>
+
+<p>本文采用地面惯性坐标系作为参考坐标系，飞行器运动用三自由度（3-DOF）质点模型描述。该模型忽略飞行器姿态动力学，将飞行器视为受控质点，适用于轨迹层面的控制分析与设计。</p>
+
+<p>定义状态向量 $\mathbf{x} \in \mathbb{R}^6$ 和控制向量 $\mathbf{u} \in \mathbb{R}^3$ 如下：</p>
+
+$$
+\mathbf{x} = \begin{bmatrix} p_x & p_y & p_z & V & \chi & \gamma \end{bmatrix}^{\mathrm{T}}, \quad
+\mathbf{u} = \begin{bmatrix} T & \dot{\chi} & \dot{\gamma} \end{bmatrix}^{\mathrm{T}}
+$$
+
+<p>其中，$p_x, p_y, p_z$ 为飞行器在惯性系中的位置坐标（m）；$V$ 为飞行速度大小（m/s）；$\chi$ 为航向角（rad），定义为速度向量在水平面内的投影与$x$轴正方向的夹角；$\gamma$ 为航迹角（rad），定义为速度向量与水平面的夹角。控制量中，$T$ 为发动机推力（N），$\dot{\chi}$ 为航向角速率（rad/s），$\dot{\gamma}$ 为航迹角速率（rad/s）。</p>
+
+<h3>2.2 三自由度质点动力学方程</h3>
+
+<p>在地面惯性坐标系下，飞行器的三自由度质点运动方程为：</p>
+
+$$
+\dot{\mathbf{x}} = f(\mathbf{x}, \mathbf{u}) =
+\begin{bmatrix}
+V \cos\gamma \cos\chi \\[4pt]
+V \cos\gamma \sin\chi \\[4pt]
+V \sin\gamma \\[4pt]
+\dfrac{T - D(\mathbf{x})}{m} - g \sin\gamma \\[6pt]
+\dot{\chi} \\[4pt]
+\dot{\gamma}
+\end{bmatrix}
+$$
+
+<p>其中，$m$ 为飞行器质量（kg）；$g$ 为重力加速度（m/s$^2$）；$D(\mathbf{x})$ 为气动阻力，采用如下二次型模型：</p>
+
+$$
+D(\mathbf{x}) = \frac{1}{2} \rho V^2 S C_D
+$$
+
+<p>式中，$\rho$ 为空气密度（kg/m$^3$），$S$ 为参考面积（m$^2$），$C_D$ 为阻力系数。</p>
+
+<p>上述方程的前三个分量描述位置运动学，第四个分量描述速度动力学（含推力、阻力与重力分量），最后两个分量将航向角速率和航迹角速率作为直接控制输入。该模型的特点是：位置运动学具有三角函数非线性，速度动力学含有重力耦合项，而角速率通道为积分关系。</p>
+
+<h3>2.3 负推力建模</h3>
+
+<p>在实际飞行中，飞行器减速除依靠减小发动机推力外，还可通过展开减速板（speedbrake）产生附加阻力实现快速减速。为在控制模型中反映这一能力，本文将减速板的减速效果等效为负推力，从而扩展推力的下限。</p>
+
+<p>设发动机自身推力范围为 $[T_{\text{eng,min}},\, T_{\text{eng,max}}]$，减速板可产生的等效负推力为 $T_{\text{brake}}$，则等效推力的约束为：</p>
+
+$$
+T_{\min} \leq T \leq T_{\max}
+$$
+
+<p>其中 $T_{\min} = T_{\text{eng,min}} - T_{\text{brake}}$，$T_{\max} = T_{\text{eng,max}}$。本文取 $T_{\min} = -50$&nbsp;N，$T_{\max} = 200$&nbsp;N，负推力下限对应减速板全开状态。</p>
+
+<h3>2.4 约束条件</h3>
+
+<p>飞行器运动受以下约束：</p>
+
+$$
+\begin{cases}
+T_{\min} \leq T \leq T_{\max} \\[4pt]
+|\dot{\chi}| \leq \dot{\chi}_{\max} \\[4pt]
+|\dot{\gamma}| \leq \dot{\gamma}_{\max} \\[4pt]
+V_{\min} \leq V \leq V_{\max}
+\end{cases}
+$$
+
+<p>上述约束包括推力幅值约束、航向角速率与航迹角速率约束以及速度约束。这些约束在MPC优化问题中以不等式形式显式处理。本文取 $T \in [-50, 200]$&nbsp;N，$|\dot{\chi}| \leq 0.3$&nbsp;rad/s，$|\dot{\gamma}| \leq 0.2$&nbsp;rad/s。</p>
+
+<h3>2.5 轨迹跟踪问题</h3>
+
+<p>轨迹跟踪的目标是设计控制律 $\mathbf{u}(t) = \pi(\mathbf{x}(t),\, \mathbf{x}_r(t))$，使得飞行器状态 $\mathbf{x}(t)$ 在存在初始偏差的情况下渐近跟踪参考轨迹 $\mathbf{x}_r(t)$，同时满足上述约束条件。形式化地，定义跟踪误差 $\tilde{\mathbf{x}}(t) = \mathbf{x}(t) - \mathbf{x}_r(t)$，目标是使</p>
+
+$$
+\lim_{t \to \infty} \|\tilde{\mathbf{x}}(t)\| \to 0
+$$
+
+<p>且控制输入始终满足 $\mathbf{u}(t) \in \mathcal{U}$，其中 $\mathcal{U}$ 为由约束条件定义的可行控制集。本文采用LTV-MPC方法求解该问题，其核心思路是在参考轨迹附近对非线性动力学进行线性化，将非线性的有限时域最优控制问题转化为每步可快速求解的QP问题。</p>
+
+<!-- ==================== 3. LTV-MPC Controller Design ==================== -->
+<h2 id="sec3">3 LTV-MPC控制器设计</h2>
+
+<p>本节详述LTV-MPC控制器的设计过程，包括连续动力学线性化、离散化、预测模型构建、QP标准形式推导以及终端约束设计。</p>
+
+<h3>3.1 Jacobian线性化</h3>
+
+<p>考虑非线性动力学 $\dot{\mathbf{x}} = f(\mathbf{x}, \mathbf{u})$，在参考轨迹 $(\mathbf{x}_r(t), \mathbf{u}_r(t))$ 附近进行一阶Taylor展开。定义状态偏差与控制偏差：</p>
+
+$$
+\delta\mathbf{x}(t) = \mathbf{x}(t) - \mathbf{x}_r(t), \quad \delta\mathbf{u}(t) = \mathbf{u}(t) - \mathbf{u}_r(t)
+$$
+
+<p>线性化后的偏差动力学为：</p>
+
+$$
+\delta\dot{\mathbf{x}}(t) = \mathbf{A}(t)\,\delta\mathbf{x}(t) + \mathbf{B}(t)\,\delta\mathbf{u}(t)
+$$
+
+<p>其中Jacobian矩阵 $\mathbf{A}(t) \in \mathbb{R}^{6 \times 6}$ 和 $\mathbf{B}(t) \in \mathbb{R}^{6 \times 3}$ 分别为：</p>
+
+$$
+\mathbf{A}(t) = \left.\frac{\partial f}{\partial \mathbf{x}}\right|_{\mathbf{x}_r,\,\mathbf{u}_r} =
+\begin{bmatrix}
+0 & 0 & 0 & \cos\gamma_r\cos\chi_r & -V_r\cos\gamma_r\sin\chi_r & -V_r\sin\gamma_r\cos\chi_r \\[4pt]
+0 & 0 & 0 & \cos\gamma_r\sin\chi_r & V_r\cos\gamma_r\cos\chi_r & -V_r\sin\gamma_r\sin\chi_r \\[4pt]
+0 & 0 & 0 & \sin\gamma_r & 0 & V_r\cos\gamma_r \\[4pt]
+0 & 0 & 0 & -\dfrac{\rho S C_D V_r}{m} & 0 & -g\cos\gamma_r \\[6pt]
+0 & 0 & 0 & 0 & 0 & 0 \\[4pt]
+0 & 0 & 0 & 0 & 0 & 0
+\end{bmatrix}
+$$
+
+$$
+\mathbf{B}(t) = \left.\frac{\partial f}{\partial \mathbf{u}}\right|_{\mathbf{x}_r,\,\mathbf{u}_r} =
+\begin{bmatrix}
+0 & 0 & 0 \\[4pt]
+0 & 0 & 0 \\[4pt]
+0 & 0 & 0 \\[4pt]
+\dfrac{1}{m} & 0 & 0 \\[6pt]
+0 & 1 & 0 \\[4pt]
+0 & 0 & 1
+\end{bmatrix}
+$$
+
+<p>其中下标 $r$ 表示在参考轨迹处取值。由上式可见，$\mathbf{A}(t)$ 是时变的（依赖参考状态 $\mathbf{x}_r(t)$），而 $\mathbf{B}(t)$ 为常数矩阵。由于参考轨迹随时间变化，线性化后的系统为线性时变（LTV）系统。</p>
+
+<h3>3.2 前向Euler离散化</h3>
+
+<p>采用前向Euler法对连续LTV系统进行离散化，采样周期为 $T_s$：</p>
+
+$$
+\delta\mathbf{x}_{k+1} = \mathbf{A}_k\,\delta\mathbf{x}_k + \mathbf{B}_k\,\delta\mathbf{u}_k
+$$
+
+<p>其中 $\mathbf{A}_k = \mathbf{I} + T_s \mathbf{A}(kT_s)$，$\mathbf{B}_k = T_s \mathbf{B}(kT_s)$，$\mathbf{I}$ 为 $6 \times 6$ 单位矩阵。</p>
+
+<h3>3.3 预测模型与代价函数</h3>
+
+<p>设预测时域为 $N$，在时刻 $k$，给定当前状态 $\mathbf{x}_k$ 和参考轨迹 $\{\mathbf{x}_{r,k+i}\}_{i=0}^{N}$、$\{\mathbf{u}_{r,k+i}\}_{i=0}^{N-1}$，预测未来 $N$ 步的状态偏差和控制偏差。由离散化方程递推可得预测状态：</p>
+
+$$
+\delta\mathbf{x}_{k+i} = \Phi_{i,k}\,\delta\mathbf{x}_k + \sum_{j=0}^{i-1} \Phi_{i-j-1,k}\,\mathbf{B}_{k+j}\,\delta\mathbf{u}_{k+j}, \quad i = 1, \ldots, N
+$$
+
+<p>其中 $\Phi_{i,k} = \mathbf{A}_{k+i-1} \mathbf{A}_{k+i-2} \cdots \mathbf{A}_k$ 为状态转移矩阵（$\Phi_{0,k} = \mathbf{I}$）。</p>
+
+<p>定义有限时域最优控制问题的代价函数：</p>
+
+$$
+J = \sum_{i=0}^{N-1} \left( \delta\mathbf{x}_{k+i}^{\mathrm{T}} \mathbf{Q}\, \delta\mathbf{x}_{k+i} + \delta\mathbf{u}_{k+i}^{\mathrm{T}} \mathbf{R}\, \delta\mathbf{u}_{k+i} \right) + \delta\mathbf{x}_{k+N}^{\mathrm{T}} \mathbf{P}\, \delta\mathbf{x}_{k+N}
+$$
+
+<p>其中 $\mathbf{Q} \in \mathbb{R}^{6 \times 6}$ 为半正定状态权重矩阵，$\mathbf{R} \in \mathbb{R}^{3 \times 3}$ 为正定控制权重矩阵，$\mathbf{P} \in \mathbb{R}^{6 \times 6}$ 为终端权重矩阵。终端代价 $\delta\mathbf{x}_{k+N}^{\mathrm{T}} \mathbf{P}\, \delta\mathbf{x}_{k+N}$ 的作用是近似无穷时域代价的尾部，对保证闭环稳定性至关重要<sup>[4]</sup>。</p>
+
+<h3>3.4 QP标准形式推导</h3>
+
+<p>将预测模型代入代价函数，并定义堆叠控制偏差向量：</p>
+
+$$
+\Delta\mathcal{U} = \begin{bmatrix} \delta\mathbf{u}_{k} \\ \delta\mathbf{u}_{k+1} \\ \vdots \\ \delta\mathbf{u}_{k+N-1} \end{bmatrix} \in \mathbb{R}^{3N}
+$$
+
+<p>则代价函数可写为关于 $\Delta\mathcal{U}$ 的二次型：</p>
+
+$$
+J = \frac{1}{2} \Delta\mathcal{U}^{\mathrm{T}} \mathbf{H}\, \Delta\mathcal{U} + \mathbf{g}^{\mathrm{T}} \Delta\mathcal{U} + \text{const}
+$$
+
+<p>其中 $\mathbf{H} \in \mathbb{R}^{3N \times 3N}$ 为Hessian矩阵，$\mathbf{g} \in \mathbb{R}^{3N}$ 为梯度向量，const为不依赖决策变量的常数项。</p>
+
+<p>Hessian矩阵 $\mathbf{H}$ 的结构为：</p>
+
+$$
+\mathbf{H} = \mathbf{S}_u^{\mathrm{T}} \bar{\mathbf{Q}}\, \mathbf{S}_u + \bar{\mathbf{R}}
+$$
+
+<p>其中 $\bar{\mathbf{Q}} = \mathrm{blkdiag}(\mathbf{Q}, \ldots, \mathbf{Q}, \mathbf{P})$ 为 $6N \times 6N$ 的块对角矩阵（前 $N\!-\!1$ 块为 $\mathbf{Q}$，最后一块为 $\mathbf{P}$），$\bar{\mathbf{R}} = \mathrm{blkdiag}(\mathbf{R}, \ldots, \mathbf{R})$ 为 $3N \times 3N$ 的块对角矩阵，$\mathbf{S}_u$ 为将 $\Delta\mathcal{U}$ 映射到预测状态偏差的系数矩阵。</p>
+
+<p>梯度向量 $\mathbf{g}$ 为：</p>
+
+$$
+\mathbf{g} = \mathbf{S}_u^{\mathrm{T}} \bar{\mathbf{Q}}\, \mathbf{S}_x\, \delta\mathbf{x}_k
+$$
+
+<p>其中 $\mathbf{S}_x$ 为将初始偏差 $\delta\mathbf{x}_k$ 传播到预测状态偏差的系数矩阵。</p>
+
+<p>控制约束以盒式不等式形式给出。由 $\mathbf{u}_{k+i} = \mathbf{u}_{r,k+i} + \delta\mathbf{u}_{k+i}$ 及约束条件，得：</p>
+
+$$
+\mathbf{u}_{\min} - \mathbf{u}_{r,k+i} \leq \delta\mathbf{u}_{k+i} \leq \mathbf{u}_{\max} - \mathbf{u}_{r,k+i}, \quad i = 0, \ldots, N-1
+$$
+
+<p>堆叠后可写为 $\mathcal{U}_{\text{lb}} \leq \Delta\mathcal{U} \leq \mathcal{U}_{\text{ub}}$。综上，每步的优化问题为如下标准QP：</p>
+
+$$
+\begin{aligned}
+\min_{\Delta\mathcal{U}} \quad & \frac{1}{2} \Delta\mathcal{U}^{\mathrm{T}} \mathbf{H}\, \Delta\mathcal{U} + \mathbf{g}^{\mathrm{T}} \Delta\mathcal{U} \\
+\text{s.t.} \quad & \mathcal{U}_{\text{lb}} \leq \Delta\mathcal{U} \leq \mathcal{U}_{\text{ub}}
+\end{aligned}
+$$
+
+<p>该QP问题仅有盒式约束，可利用有效集法或内点法高效求解。对于约束线性系统，Bemporad等<sup>[9]</sup>指出此类QP还可通过显式求解获得分段仿射控制律，为嵌入式实现提供途径。本文采用MATLAB的quadprog函数（内点法）在线求解。</p>
+
+<h3>3.5 基于DARE的终端约束设计</h3>
+
+<p>终端权重 $\mathbf{P}$ 的选取直接影响闭环稳定性。本文采用离散代数Riccati方程（DARE）求解终端权重，其原理是用终端LQR的最优代价矩阵近似无穷时域代价的尾部<sup>[4,12]</sup>。</p>
+
+<p>在预测时域末端，将线性化系统 $(\mathbf{A}_{k+N-1}, \mathbf{B}_{k+N-1})$ 视为终端局部线性模型，求解如下DARE：</p>
+
+$$
+\mathbf{P} = \mathbf{A}_N^{\mathrm{T}} \mathbf{P}\, \mathbf{A}_N - \mathbf{A}_N^{\mathrm{T}} \mathbf{P}\, \mathbf{B}_N \left(\mathbf{B}_N^{\mathrm{T}} \mathbf{P}\, \mathbf{B}_N + \mathbf{R}\right)^{-1} \mathbf{B}_N^{\mathrm{T}} \mathbf{P}\, \mathbf{A}_N + \mathbf{Q}
+$$
+
+<p>其中 $\mathbf{A}_N = \mathbf{A}_{k+N-1}$，$\mathbf{B}_N = \mathbf{B}_{k+N-1}$ 为终端时刻的离散化系统矩阵。</p>
+
+<p>DARE的求解可转化为迭代过程：初始化 $\mathbf{P}^{(0)} = \mathbf{Q}$，迭代</p>
+
+$$
+\mathbf{P}^{(j+1)} = \mathbf{A}_N^{\mathrm{T}} \mathbf{P}^{(j)} \mathbf{A}_N - \mathbf{A}_N^{\mathrm{T}} \mathbf{P}^{(j)} \mathbf{B}_N \left(\mathbf{B}_N^{\mathrm{T}} \mathbf{P}^{(j)} \mathbf{B}_N + \mathbf{R}\right)^{-1} \mathbf{B}_N^{\mathrm{T}} \mathbf{P}^{(j)} \mathbf{A}_N + \mathbf{Q}
+$$
+
+<p>直至 $\|\mathbf{P}^{(j+1)} - \mathbf{P}^{(j)}\| < \varepsilon$（本文取 $\varepsilon = 10^{-6}$）。当 $(\mathbf{A}_N, \mathbf{B}_N)$ 可控且 $(\mathbf{Q}^{1/2}, \mathbf{A}_N)$ 可观测时，迭代收敛至唯一正定解 $\mathbf{P}^*$<sup>[12]</sup>。终端代价与终端约束的引入是保证MPC闭环稳定性的关键条件<sup>[4,13]</sup>。</p>
+
+<h3>3.6 滚动时域控制算法</h3>
+
+<p>综合以上设计，LTV-MPC的滚动时域控制流程如算法1所示。</p>
+
+<div class="algorithm">
+<div class="algorithm-title">算法1 &nbsp; LTV-MPC滚动时域控制</div>
+<p class="alg-input"><strong>输入：</strong>参考轨迹 $\{\mathbf{x}_{r,k}\}$, $\{\mathbf{u}_{r,k}\}$; 权重 $\mathbf{Q}, \mathbf{R}$; 时域 $N$; 采样周期 $T_s$</p>
+<p class="alg-output"><strong>输出：</strong>控制序列 $\{\mathbf{u}_k\}$</p>
+<ol>
+<li>获取当前状态 $\mathbf{x}_k$</li>
+<li>计算偏差 $\delta\mathbf{x}_k = \mathbf{x}_k - \mathbf{x}_{r,k}$</li>
+<li>在参考轨迹上计算Jacobian $\mathbf{A}_{k+i}, \mathbf{B}_{k+i}$，$i=0,\ldots,N-1$</li>
+<li>前向Euler离散化得 $\mathbf{A}_{k+i}, \mathbf{B}_{k+i}$</li>
+<li>求解DARE得终端权重 $\mathbf{P}$</li>
+<li>构建Hessian $\mathbf{H}$ 和梯度 $\mathbf{g}$</li>
+<li>求解QP：$\Delta\mathcal{U}^* = \arg\min$ 上述QP问题</li>
+<li>提取最优控制：$\mathbf{u}_k = \mathbf{u}_{r,k} + \delta\mathbf{u}_k^*$</li>
+<li>施加 $\mathbf{u}_k$ 于系统，等待下一采样时刻，返回步骤1</li>
+</ol>
+</div>
+
+<h3>3.7 编队扩展：Leader-Follower架构</h3>
+
+<p>将单机LTV-MPC扩展至多机编队采用Leader-Follower架构。设编队包含1架Leader和 $n_f$ 架Follower，Leader的参考轨迹为 $\mathbf{x}_{r}^{L}(t)$，第 $j$ 架Follower的参考轨迹由Leader参考轨迹经过刚性平移变换得到：</p>
+
+$$
+\mathbf{x}_{r}^{F_j}(t) = \mathbf{x}_{r}^{L}(t) + \mathbf{d}_j, \quad j = 1, \ldots, n_f
+$$
+
+<p>其中 $\mathbf{d}_j \in \mathbb{R}^3$ 为第 $j$ 架Follower相对于Leader的期望位置偏移量（在惯性系中定义）。</p>
+
+<p>每架飞行器独立运行LTV-MPC控制器，各自跟踪由上式生成的参考轨迹。该架构的优点是：</p>
+
+<ul class="contrib-list">
+<li><strong style="font-family:'SimHei',sans-serif;">模块化设计：</strong>每架飞行器使用相同的LTV-MPC控制器，仅需修改参考轨迹生成模块；</li>
+<li><strong style="font-family:'SimHei',sans-serif;">分布式实现：</strong>各飞行器仅需Leader的参考轨迹信息，无需实时状态通信（在标称工况下）；</li>
+<li><strong style="font-family:'SimHei',sans-serif;">可扩展性：</strong>增加编队规模只需增加Follower数量，控制器结构不变。</li>
+</ul>
+
+<p>需要指出的是，Leader-Follower架构在标称工况下表现良好，但当Leader受到扰动时，误差可能沿编队传播。该鲁棒性问题的分析留待未来工作。</p>
+
+<!-- ==================== 4. Reference Trajectory Generation ==================== -->
+<h2 id="sec4">4 参考轨迹生成方法</h2>
+
+<p>参考轨迹的质量直接影响MPC的跟踪性能。本节介绍基于弧长重参数化与转角平滑的参考轨迹生成方法，包括航向角unwrap处理、转角平滑以及重力补偿。</p>
+
+<h3>4.1 航点定义与弧长重参数化</h3>
+
+<p>给定一组有序航点 $\{\mathbf{p}_i\}_{i=0}^{M}$，其中 $\mathbf{p}_i = [p_{x,i},\, p_{y,i},\, p_{z,i}]^{\mathrm{T}}$ 为第 $i$ 个航点的三维坐标。相邻航点之间以直线段连接，形成分段线性参考路径。</p>
+
+<p>定义路径弧长为各段长度之和：</p>
+
+$$
+s_i = \sum_{j=0}^{i-1} \|\mathbf{p}_{j+1} - \mathbf{p}_j\|_2, \quad i = 1, \ldots, M; \quad s_0 = 0
+$$
+
+<p>则总弧长为 $s_M$。路径上的任意位置可通过弧长 $s \in [0, s_M]$ 参数化：</p>
+
+$$
+\mathbf{p}(s) = \mathbf{p}_i + \frac{s - s_i}{s_{i+1} - s_i}(\mathbf{p}_{i+1} - \mathbf{p}_i), \quad s \in [s_i, s_{i+1}]
+$$
+
+<p>进一步，将弧长 $s$ 表示为时间的函数 $s(t)$。设参考速度为 $V_r$（恒定），则 $s(t) = V_r \cdot t$，参考位置为 $\mathbf{p}_r(t) = \mathbf{p}(V_r \cdot t)$。弧长重参数化的优势在于：无论路径几何形状如何复杂，参考轨迹在时间轴上保持匀速推进，有利于MPC预测模型的稳定性。</p>
+
+<h3>4.2 转角平滑处理</h3>
+
+<p>分段线性路径在航点处存在转角突变，导致参考航向角 $\chi_r$ 出现不连续跳变。这种不连续性会使MPC的控制量在转弯处剧烈变化，影响跟踪平滑性。</p>
+
+<p>为消除转角突变，本文在航点处采用圆弧过渡进行平滑。设相邻路径段的方向角分别为 $\chi_i$ 和 $\chi_{i+1}$，转角为 $\Delta\chi_i = \chi_{i+1} - \chi_i$。在航点 $\mathbf{p}_i$ 附近，以转弯半径 $R_t$ 构造圆弧，使航向角从 $\chi_i$ 平滑过渡到 $\chi_{i+1}$。本文取 $R_t = 50$&nbsp;m。圆弧过渡段的参数方程为：</p>
+
+$$
+\mathbf{p}_{\text{arc}}(\theta) = \mathbf{c}_i + R_t \begin{bmatrix} \cos\theta \\ \sin\theta \\ 0 \end{bmatrix}, \quad \theta \in [\theta_{\text{start}},\, \theta_{\text{end}}]
+$$
+
+<p>其中 $\mathbf{c}_i$ 为圆弧圆心，$\theta$ 为参数角。圆弧段对应的弧长为 $R_t \cdot |\Delta\chi_i|$，需在总弧长计算中予以修正。经平滑处理后，参考航向角 $\chi_r(t)$ 在全程连续可微，满足 $\dot{\chi}_r \leq \dot{\chi}_{\max}$ 的约束。</p>
+
+<h3>4.3 航向角unwrap处理</h3>
+
+<p>航向角 $\chi$ 的取值范围为 $(-\pi, \pi]$ 或 $[0, 2\pi)$，当飞行器穿越 $\pm\pi$ 边界时，航向角会发生 $2\pi$ 的跳变。这种跳变会导致：参考航向角 $\chi_r(t)$ 出现不连续；MPC代价函数中航向角偏差计算错误；Jacobian矩阵中三角函数项突变。</p>
+
+<p>为此，本文采用航向角unwrap（解卷绕）算法，将航向角展开为连续值。unwrap的核心规则为：当相邻两个参考航向角之差超过 $\pi$ 时，通过加减 $2\pi$ 进行修正：</p>
+
+$$
+\chi_r^{\text{unwrap}}(t) = \chi_r(t) + 2\pi \cdot n(t)
+$$
+
+<p>其中 $n(t)$ 为整数修正项，使得 $|\chi_r^{\text{unwrap}}(t) - \chi_r^{\text{unwrap}}(t - T_s)| < \pi$ 恒成立。类似地，在计算跟踪误差时，对实际航向角 $\chi$ 也进行同步unwrap，确保偏差 $\delta\chi = \chi^{\text{unwrap}} - \chi_r^{\text{unwrap}}$ 始终在 $(-\pi, \pi]$ 范围内取最小值。</p>
+
+<h3>4.4 重力补偿</h3>
+
+<p>参考轨迹仅给出了位置和速度的参考值，但未显式给出控制量的参考值 $\mathbf{u}_r(t)$。为使参考控制满足动力学一致性，需要根据参考状态反解参考控制。由动力学方程的第4个分量，参考推力应满足：</p>
+
+$$
+\dot{V}_r = \frac{T_r - D(\mathbf{x}_r)}{m} - g \sin\gamma_r
+$$
+
+<p>解得参考推力：</p>
+
+$$
+T_r = m\dot{V}_r + D(\mathbf{x}_r) + m g \sin\gamma_r
+$$
+
+<p>其中 $\dot{V}_r$ 由参考速度的数值微分获得，$D(\mathbf{x}_r) = \frac{1}{2}\rho V_r^2 S C_D$ 为参考阻力。上式中的 $mg\sin\gamma_r$ 项即为重力补偿：当航迹角 $\gamma_r > 0$（爬升）时，参考推力自动增加以克服重力分量；当 $\gamma_r < 0$（下降）时，参考推力减小甚至为负（启用减速板）。参考角速率为：</p>
+
+$$
+\dot{\chi}_r = \frac{d\chi_r^{\text{unwrap}}}{dt}, \quad \dot{\gamma}_r = \frac{d\gamma_r}{dt}
+$$
+
+<p>由unwrap后的参考航向角和参考航迹角数值微分获得。</p>
+
+<h3>4.5 完整轨迹生成算法</h3>
+
+<p>综合以上各步骤，参考轨迹生成的完整流程如算法2所示。</p>
+
+<div class="algorithm">
+<div class="algorithm-title">算法2 &nbsp; 参考轨迹生成</div>
+<p class="alg-input"><strong>输入：</strong>航点序列 $\{\mathbf{p}_i\}_{i=0}^{M}$; 参考速度 $V_r$; 采样周期 $T_s$; 转弯半径 $R_t$</p>
+<p class="alg-output"><strong>输出：</strong>参考轨迹 $\{\mathbf{x}_{r,k}\}$, $\{\mathbf{u}_{r,k}\}$</p>
+<ol>
+<li>计算各段弧长 $s_i$</li>
+<li>对航点转角进行圆弧平滑</li>
+<li>修正平滑后总弧长</li>
+<li>按弧长重参数化生成参考位置 $\mathbf{p}_r(t)$</li>
+<li>计算参考航向角 $\chi_r(t)$ 和参考航迹角 $\gamma_r(t)$</li>
+<li>对 $\chi_r(t)$ 进行unwrap处理</li>
+<li>数值微分计算 $\dot{V}_r$, $\dot{\chi}_r$, $\dot{\gamma}_r$</li>
+<li>重力补偿计算参考推力 $T_r$</li>
+<li>组装参考状态 $\mathbf{x}_{r,k}$ 和参考控制 $\mathbf{u}_{r,k}$</li>
+<li>返回 $\{\mathbf{x}_{r,k}\}$, $\{\mathbf{u}_{r,k}\}$</li>
+</ol>
+</div>
+
+<p>该算法生成的参考轨迹满足以下性质：位置连续且匀速推进；航向角连续可微（经平滑与unwrap处理）；参考控制满足动力学一致性（经重力补偿）；参考推力考虑了负推力能力。这些性质为MPC的有效跟踪提供了基础。</p>
+
+<!-- ==================== 5. Simulation Experiments ==================== -->
+<h2 id="sec5">5 仿真实验与结果分析</h2>
+
+<p>本节通过仿真实验验证所提LTV-MPC方法的有效性。实验包括单机轨迹跟踪、基线方法对比、QP求解性能分析以及3机编队验证四个部分。</p>
+
+<h3>5.1 仿真设置</h3>
+
+<p>仿真在MATLAB环境下进行，操作系统为Windows 11，CPU为Intel Core i7-12700K。飞行器动力学采用3-DOF质点模型，仿真步长与MPC采样周期一致。仿真参数如表1所示。</p>
+
+<div class="table-wrapper">
+<table>
+<caption>表1 &nbsp; 仿真参数</caption>
+<thead>
+<tr>
+<th>参数</th><th>符号</th><th>取值</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>飞行器质量</td><td>$m$</td><td>25 kg</td></tr>
+<tr><td>参考面积</td><td>$S$</td><td>0.5 m$^2$</td></tr>
+<tr><td>空气密度</td><td>$\rho$</td><td>1.225 kg/m$^3$</td></tr>
+<tr><td>阻力系数</td><td>$C_{D0}$</td><td>0.02</td></tr>
+<tr><td>推力范围</td><td>$[T_{\min}, T_{\max}]$</td><td>[-50, 200] N</td></tr>
+<tr><td>航向角速率上限</td><td>$\dot{\chi}_{\max}$</td><td>0.3 rad/s</td></tr>
+<tr><td>航迹角速率上限</td><td>$\dot{\gamma}_{\max}$</td><td>0.2 rad/s</td></tr>
+<tr><td>预测时域</td><td>$N$</td><td>30</td></tr>
+<tr><td>采样周期</td><td>$T_s$</td><td>0.1 s</td></tr>
+<tr><td>状态权重</td><td>$\mathbf{Q}$</td><td>diag(50, 50, 50, 5, 10, 10)</td></tr>
+<tr><td>控制权重</td><td>$\mathbf{R}$</td><td>diag(0.01, 0.5, 0.5)</td></tr>
+<tr><td>仿真时长</td><td>$T_{\text{total}}$</td><td>60 s</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>参考轨迹由多个航点组成的三维空间折线生成，包含水平转弯和高度变化，经弧长重参数化与转角平滑处理后用于跟踪。</p>
+
+<h3>5.2 单机轨迹跟踪结果</h3>
+
+<p>图1展示了LTV-MPC控制下飞行器的三维轨迹跟踪结果。可见，飞行器从初始偏离参考轨迹的位置出发，快速收敛至参考轨迹并保持精确跟踪。</p>
+
+<div class="figure">
+<img src="../results/trajectory_3d.png" alt="单机三维轨迹跟踪结果">
+<div class="figure-caption">图1 &nbsp; 单机三维轨迹跟踪结果</div>
+</div>
+
+<p>图2给出了各状态分量的跟踪误差曲线。位置误差在初始阶段快速收敛，稳态阶段保持在小幅波动范围内。航向角和航迹角的跟踪误差同样快速收敛至零附近。</p>
+
+<div class="figure">
+<img src="../results/tracking_error.png" alt="单机跟踪误差曲线">
+<div class="figure-caption">图2 &nbsp; 单机跟踪误差曲线</div>
+</div>
+
+<p>定量性能指标如表2所示。所提LTV-MPC方法的轨迹跟踪均方根误差（RMSE）为0.12&nbsp;m，最大误差（MAX）为0.75&nbsp;m，约束满足率为100%。</p>
+
+<div class="table-wrapper">
+<table>
+<caption>表2 &nbsp; 单机跟踪性能指标</caption>
+<thead>
+<tr>
+<th>方法</th><th>RMSE (m)</th><th>MAX (m)</th><th>求解时间 (ms)</th><th>约束满足率</th>
+</tr>
+</thead>
+<tbody>
+<tr><td class="bold">LTV-MPC (本文)</td><td class="bold">0.12</td><td class="bold">0.75</td><td class="bold">1.42</td><td class="bold">100%</td></tr>
+<tr><td>LQR 基线</td><td>556</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>PID 基线</td><td>141</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>5.3 基线方法对比</h3>
+
+<p>为评估LTV-MPC的优越性，本文实现了两种基线控制器进行对比：</p>
+
+<p><strong style="font-family:'SimHei',sans-serif;">（1）LQR基线。</strong> 采用基于线性化模型的无限时域LQR控制器，权重矩阵与MPC一致。LQR无法显式处理约束，且在参考轨迹附近线性化仅在局部有效。</p>
+
+<p><strong style="font-family:'SimHei',sans-serif;">（2）PID基线。</strong> 对各状态通道分别设计PID控制器，通过增益调节实现轨迹跟踪。PID控制器结构简单但难以处理多变量耦合与约束。</p>
+
+<p>基线对比结果如表2和图3所示。LQR基线的RMSE高达556&nbsp;m，PID基线的RMSE为141&nbsp;m，均远高于LTV-MPC的0.12&nbsp;m。LTV-MPC相比LQR和PID分别将跟踪精度提升了约3个和2个数量级。</p>
+
+<div class="figure">
+<img src="../results/baseline_comparison.png" alt="基线方法跟踪误差对比">
+<div class="figure-caption">图3 &nbsp; 基线方法跟踪误差对比</div>
+</div>
+
+<p>LQR基线性能较差的主要原因在于：LQR在单一工作点线性化，无法适应参考轨迹全程的动力学变化；LQR无法显式处理推力和角速率约束，导致控制量饱和后系统失稳。PID基线虽然通过积分作用可消除稳态误差，但缺乏对多变量耦合的处理能力，且在急转弯处跟踪误差显著增大。</p>
+
+<h3>5.4 QP求解性能分析</h3>
+
+<p>本文对比了两种求解策略的实时性能。<strong style="font-family:'SimHei',sans-serif;">（1）非线性求解（fmincon）</strong>：直接对非线性MPC问题使用MATLAB的fmincon求解器（SQP算法），每步求解非线性规划问题。<strong style="font-family:'SimHei',sans-serif;">（2）QP求解（quadprog）</strong>：将问题线性化并重构为标准QP形式后，使用quadprog求解器（内点法）。</p>
+
+<p>图4给出了两种方法的单步求解时间分布。</p>
+
+<div class="figure">
+<img src="../results/solve_time.png" alt="求解时间对比">
+<div class="figure-caption">图4 &nbsp; 求解时间对比</div>
+</div>
+
+<p>如表3所示，fmincon的平均求解时间为138&nbsp;ms，quadprog的平均求解时间为1.42&nbsp;ms，QP重构实现了约97倍的加速。该加速来源于：QP问题仅含盒式约束，结构简单，内点法可在极少数迭代内收敛；而SQP需要在每步求解多个QP子问题并执行线搜索，计算开销显著更大。</p>
+
+<div class="table-wrapper">
+<table>
+<caption>表3 &nbsp; 求解性能对比</caption>
+<thead>
+<tr>
+<th>求解器</th><th>平均求解时间 (ms)</th><th>加速比</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>fmincon (SQP)</td><td>138</td><td>1&times;</td></tr>
+<tr><td class="bold">quadprog (QP)</td><td class="bold">1.42</td><td class="bold">97&times;</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>以采样周期 $T_s = 100$&nbsp;ms为参考，quadprog的求解时间（1.42&nbsp;ms）远小于采样周期，满足实时控制要求；而fmincon的求解时间（138&nbsp;ms）已超过采样周期，无法实现实时控制。</p>
+
+<h3>5.5 3机编队仿真</h3>
+
+<p>将LTV-MPC扩展至3机编队（1架Leader + 2架Follower），采用Leader-Follower架构。Follower的期望位置偏移量为：</p>
+
+$$
+\mathbf{d}_1 = \begin{bmatrix} 0 \\ -50 \\ 0 \end{bmatrix}\,\text{m}, \quad
+\mathbf{d}_2 = \begin{bmatrix} 0 \\ 50 \\ 0 \end{bmatrix}\,\text{m}
+$$
+
+<p>即两架Follower分别位于Leader左右各偏50&nbsp;m处。图5展示了3机编队的三维飞行轨迹。可见三架飞行器保持稳定的编队构型，沿参考路径协同飞行。</p>
+
+<div class="figure">
+<img src="../results/formation/trajectory_3d.png" alt="3机编队三维轨迹">
+<div class="figure-caption">图5 &nbsp; 3机编队三维轨迹</div>
+</div>
+
+<p>图6给出了编队中各飞行器的跟踪误差曲线。</p>
+
+<div class="figure">
+<img src="../results/formation/tracking_error.png" alt="3机编队跟踪误差">
+<div class="figure-caption">图6 &nbsp; 3机编队跟踪误差</div>
+</div>
+
+<p>编队跟踪性能如表4所示。Leader的RMSE为0.12&nbsp;m，与单机结果一致。Follower 1和Follower 2的跟踪误差均接近0&nbsp;m，表明在标称工况下，Follower能够精确跟踪由Leader参考轨迹生成的偏移参考轨迹。</p>
+
+<div class="table-wrapper">
+<table>
+<caption>表4 &nbsp; 3机编队跟踪性能</caption>
+<thead>
+<tr>
+<th>飞行器</th><th>RMSE (m)</th><th>MAX (m)</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Leader</td><td>0.12</td><td>0.75</td></tr>
+<tr><td>Follower 1</td><td>0.00</td><td>0.00</td></tr>
+<tr><td>Follower 2</td><td>0.00</td><td>0.00</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Follower跟踪误差极小的原因是：Follower的参考轨迹由Leader的参考轨迹（而非实际轨迹）经刚性偏移生成，在标称工况下（无外部扰动），各飞行器使用相同的LTV-MPC控制器跟踪各自的参考轨迹，因此Follower的跟踪精度与Leader相当甚至更优。需要指出的是，上述编队结果仅在标称工况下成立。当存在外部扰动（如阵风）或Leader发生偏离时，编队误差传播行为有待进一步研究。</p>
+
+<!-- ==================== 6. Conclusion ==================== -->
+<h2 id="sec6">6 结论与未来工作</h2>
+
+<h3>6.1 工作总结</h3>
+
+<p>本文针对飞行器轨迹跟踪与编队控制问题，提出了一种基于线性时变模型预测控制（LTV-MPC）的方法，并通过仿真验证了其有效性。主要工作与结论如下：</p>
+
+<p>（1）<strong style="font-family:'SimHei',sans-serif;">实时LTV-MPC求解框架。</strong> 基于三自由度质点动力学模型，通过Jacobian线性化将非线性预测问题转化为标准QP形式。利用quadprog高效求解，单步求解耗时仅1.42&nbsp;ms，相比fmincon非线性求解器实现约97倍加速，满足实时控制要求。</p>
+
+<p>（2）<strong style="font-family:'SimHei',sans-serif;">高精度轨迹跟踪。</strong> LTV-MPC的轨迹跟踪RMSE为0.12&nbsp;m，最大误差0.75&nbsp;m，约束满足率100%。相比LQR基线（RMSE = 556&nbsp;m）和PID基线（RMSE = 141&nbsp;m），跟踪精度分别提升约3个和2个数量级，验证了LTV-MPC在处理非线性动力学与多变量约束方面的优势。</p>
+
+<p>（3）<strong style="font-family:'SimHei',sans-serif;">参考轨迹生成方法。</strong> 设计了基于弧长重参数化与转角平滑的轨迹生成算法，通过航向角unwrap和重力补偿保证参考轨迹的动力学可行性与连续性，并对减速板负推力进行了建模。</p>
+
+<p>（4）<strong style="font-family:'SimHei',sans-serif;">编队扩展可行性验证。</strong> 将单机LTV-MPC扩展为Leader-Follower架构，3机编队在标称工况下实现协同跟踪，Leader RMSE为0.12&nbsp;m，Follower跟踪误差接近零，验证了编队方案的可行性。</p>
+
+<h3>6.2 局限性</h3>
+
+<p>本文工作存在以下局限性，需在后续研究中加以解决：</p>
+
+<p>（1）<strong style="font-family:'SimHei',sans-serif;">终端约束效果缺乏消融实验。</strong> 本文采用DARE计算终端权重 $\mathbf{P}$，但未进行有无终端约束的消融对比实验，终端约束对闭环稳定性的定量贡献尚不明确。</p>
+
+<p>（2）<strong style="font-family:'SimHei',sans-serif;">鲁棒性未经扰动测试。</strong> 所有仿真均在标称工况下进行，未考虑阵风、模型失配、传感器噪声等外部扰动。LTV-MPC在扰动条件下的跟踪性能和编队误差传播行为有待验证。</p>
+
+<p>（3）<strong style="font-family:'SimHei',sans-serif;">编队协同为开环式。</strong> Leader-Follower架构中Follower仅依赖Leader参考轨迹（而非实际状态），当Leader偏离参考轨迹时，编队构型可能被破坏。</p>
+
+<h3>6.3 未来工作</h3>
+
+<p>基于上述分析，未来工作将从以下方向展开：</p>
+
+<p>（1）<strong style="font-family:'SimHei',sans-serif;">消融实验。</strong> 设计系统的消融实验，量化终端约束（DARE终端权重）、预测时域长度、权重矩阵等设计参数对跟踪精度与稳定性的影响，为控制器调参提供指导。</p>
+
+<p>（2）<strong style="font-family:'SimHei',sans-serif;">鲁棒性测试。</strong> 引入Dryden阵风模型、参数摄动和传感器噪声，评估LTV-MPC在扰动条件下的鲁棒性。可考虑引入tube MPC或min-max MPC框架增强鲁棒性保证<sup>[14]</sup>。</p>
+
+<p>（3）<strong style="font-family:'SimHei',sans-serif;">分布式编队控制。</strong> 将开环式Leader-Follower架构升级为分布式协同架构，引入邻居状态通信与一致性协议，分析编队误差传播与收敛性<sup>[8]</sup>。</p>
+
+<p>（4）<strong style="font-family:'SimHei',sans-serif;">硬件在环与飞行实验。</strong> 在硬件在环仿真平台上验证算法的实时性，最终开展实际飞行实验，评估方法在真实环境中的有效性。</p>
+
+<!-- ==================== References ==================== -->
+<h2 id="refs">参考文献</h2>
+
+<ol class="refs">
+<li>Garcia C E, Prett D M, Morari M. Model predictive control: Theory and practice&mdash;a survey[J]. Automatica, 1989, 25(3): 335-348.</li>
+<li>Mayne D Q. Model predictive control: Recent developments and future promise[J]. Automatica, 2014, 50(12): 2967-2986.</li>
+<li>Rawlings J B, Mayne D Q. Model Predictive Control: Theory and Design[M]. Madison, WI: Nob Hill Publishing, 2009.</li>
+<li>Mayne D Q, Rawlings J B, Rao C V, et al. Constrained model predictive control: Stability and optimality[J]. Automatica, 2000, 36(6): 789-814.</li>
+<li>Qin S J, Badgwell T A. A survey of industrial model predictive control technology[J]. Control Engineering Practice, 2003, 11(7): 733-764.</li>
+<li>Chen H, Allg&ouml;wer F. A quasi-infinite horizon nonlinear model predictive control scheme with guaranteed stability[J]. Automatica, 1998, 34(10): 1205-1217.</li>
+<li>Falcone P, Borrelli F, Asgari J, et al. Predictive active steering control for autonomous vehicle systems[J]. IEEE Transactions on Control Systems Technology, 2007, 15(3): 566-580.</li>
+<li>Keviczky T, Borrelli F, Fregene K, et al. Decentralized receding horizon control and coordination of autonomous vehicle formations[J]. IEEE Transactions on Control Systems Technology, 2008, 16(1): 19-33.</li>
+<li>Bemporad A, Morari M, Dua V, et al. The explicit linear quadratic regulator for constrained systems[J]. Automatica, 2002, 38(1): 3-20.</li>
+<li>Borrelli F, Bemporad A, Morari M. Predictive Control for Linear and Hybrid Systems[M]. Cambridge, UK: Cambridge University Press, 2017.</li>
+<li>Richards A, How J P. Decentralized model predictive control of cooperating UAVs[C]//Proceedings of the 43rd IEEE Conference on Decision and Control. Nassau, Bahamas, 2004: 4286-4291.</li>
+<li>Anderson B D O, Moore J B. Optimal Control: Linear Quadratic Methods[M]. Englewood Cliffs, NJ: Prentice-Hall, 1990.</li>
+<li>Scokaert P O M, Mayne D Q, Rawlings J B. Suboptimal model predictive control (feasibility implies stability)[J]. IEEE Transactions on Automatic Control, 1999, 44(3): 648-654.</li>
+<li>Mayne D Q, Seron M M, Rakovi&cacute; S V. Robust model predictive control of constrained linear systems with bounded disturbances[J]. Automatica, 2005, 41(2): 219-224.</li>
+</ol>
+
+</div>
+
+</body>
+</html>

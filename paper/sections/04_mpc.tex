@@ -1,0 +1,181 @@
+%==============================================================================
+% LTV-MPC 控制器设计
+%==============================================================================
+\section{LTV-MPC控制器设计}\label{sec:mpc}
+
+本节详述LTV-MPC控制器的设计过程，包括连续动力学线性化、离散化、预测模型构建、QP标准形式推导以及终端约束设计。
+
+%------------------------------------------------------------------------------
+% Jacobian 线性化
+%------------------------------------------------------------------------------
+\subsection{Jacobian线性化}\label{sec:linearization}
+
+考虑非线性动力学 $\dot{\bx} = f(\bx, \bu)$，在参考轨迹 $(\bx_r(t), \bu_r(t))$ 附近进行一阶Taylor展开。定义状态偏差与控制偏差：
+\begin{equation}\label{eq:delta}
+\delta\bx(t) = \bx(t) - \bx_r(t), \quad \delta\bu(t) = \bu(t) - \bu_r(t)
+\end{equation}
+线性化后的偏差动力学为：
+\begin{equation}\label{eq:linearized}
+\delta\dot{\bx}(t) = \bA(t)\,\delta\bx(t) + \bB(t)\,\delta\bu(t)
+\end{equation}
+其中Jacobian矩阵 $\bA(t) \in \Real^{6 \times 6}$ 和 $\bB(t) \in \Real^{6 \times 3}$ 分别为：
+\begin{equation}\label{eq:jacobian_A}
+\bA(t) = \left.\frac{\partial f}{\partial \bx}\right|_{\bx_r,\,\bu_r} = 
+\begin{bmatrix}
+0 & 0 & 0 & \cos\gamma_r\cos\chi_r & -V_r\cos\gamma_r\sin\chi_r & -V_r\sin\gamma_r\cos\chi_r \\[4pt]
+0 & 0 & 0 & \cos\gamma_r\sin\chi_r & V_r\cos\gamma_r\cos\chi_r & -V_r\sin\gamma_r\sin\chi_r \\[4pt]
+0 & 0 & 0 & \sin\gamma_r & 0 & V_r\cos\gamma_r \\[4pt]
+0 & 0 & 0 & -\frac{\rho S C_D V_r}{m} & 0 & -g\cos\gamma_r \\[4pt]
+0 & 0 & 0 & 0 & 0 & 0 \\[4pt]
+0 & 0 & 0 & 0 & 0 & 0
+\end{bmatrix}
+\end{equation}
+
+\begin{equation}\label{eq:jacobian_B}
+\bB(t) = \left.\frac{\partial f}{\partial \bu}\right|_{\bx_r,\,\bu_r} = 
+\begin{bmatrix}
+0 & 0 & 0 \\[4pt]
+0 & 0 & 0 \\[4pt]
+0 & 0 & 0 \\[4pt]
+\dfrac{1}{m} & 0 & 0 \\[6pt]
+0 & 1 & 0 \\[4pt]
+0 & 0 & 1
+\end{bmatrix}
+\end{equation}
+其中下标 $r$ 表示在参考轨迹处取值。由式~\eqref{eq:jacobian_A}和~\eqref{eq:jacobian_B}可见，$\bA(t)$ 是时变的（依赖参考状态 $\bx_r(t)$），而 $\bB(t)$ 为常数矩阵。由于参考轨迹随时间变化，线性化后的系统~\eqref{eq:linearized}为线性时变（LTV）系统。
+
+%------------------------------------------------------------------------------
+% 离散化
+%------------------------------------------------------------------------------
+\subsection{离散化}
+
+采用前向Euler法对连续LTV系统~\eqref{eq:linearized}进行离散化，采样周期为 $T_s$：
+\begin{equation}\label{eq:discretization}
+\delta\bx_{k+1} = \bA_k\,\delta\bx_k + \bB_k\,\delta\bu_k
+\end{equation}
+其中 $\bA_k = \bI + T_s \bA(kT_s)$，$\bB_k = T_s \bB(kT_s)$，$\bI$ 为 $6 \times 6$ 单位矩阵。
+
+%------------------------------------------------------------------------------
+% 预测模型
+%------------------------------------------------------------------------------
+\subsection{预测模型与代价函数}
+
+设预测时域为 $N$，在时刻 $k$，给定当前状态 $\bx_k$ 和参考轨迹 $\{\bx_{r,k+i}\}_{i=0}^{N}$、$\{\bu_{r,k+i}\}_{i=0}^{N-1}$，预测未来 $N$ 步的状态偏差和控制偏差。由式~\eqref{eq:discretization}递推可得预测状态：
+\begin{equation}\label{eq:prediction}
+\delta\bx_{k+i} = \Phi_{i,k}\,\delta\bx_k + \sum_{j=0}^{i-1} \Phi_{i-j-1,k}\,\bB_{k+j}\,\delta\bu_{k+j}, \quad i = 1, \ldots, N
+\end{equation}
+其中 $\Phi_{i,k} = \bA_{k+i-1} \bA_{k+i-2} \cdots \bA_k$ 为状态转移矩阵（$\Phi_{0,k} = \bI$）。
+
+定义有限时域最优控制问题的代价函数：
+\begin{equation}\label{eq:cost}
+J = \sum_{i=0}^{N-1} \left( \delta\bx_{k+i}\trans \bQ\, \delta\bx_{k+i} + \delta\bu_{k+i}\trans \bR\, \delta\bu_{k+i} \right) + \delta\bx_{k+N}\trans \bP\, \delta\bx_{k+N}
+\end{equation}
+其中 $\bQ \in \Real^{6 \times 6}$ 为半正定状态权重矩阵，$\bR \in \Real^{3 \times 3}$ 为正定控制权重矩阵，$\bP \in \Real^{6 \times 6}$ 为终端权重矩阵。终端代价 $\delta\bx_{k+N}\trans \bP\, \delta\bx_{k+N}$ 的作用是近似无穷时域代价的尾部，对保证闭环稳定性至关重要\cite{Mayne2000}。
+
+%------------------------------------------------------------------------------
+% QP 标准形式
+%------------------------------------------------------------------------------
+\subsection{QP标准形式推导}\label{sec:qp}
+
+将预测模型~\eqref{eq:prediction}代入代价函数~\eqref{eq:cost}，并定义堆叠控制偏差向量：
+\begin{equation}
+\Delta\mathcal{U} = \begin{bmatrix} \delta\bu_{k} \\ \delta\bu_{k+1} \\ \vdots \\ \delta\bu_{k+N-1} \end{bmatrix} \in \Real^{3N}
+\end{equation}
+则代价函数可写为关于 $\Delta\mathcal{U}$ 的二次型：
+\begin{equation}\label{eq:qp_cost}
+J = \frac{1}{2} \Delta\mathcal{U}\trans \bH\, \Delta\mathcal{U} + \mathbf{g}\trans \Delta\mathcal{U} + \text{const}
+\end{equation}
+其中 $\bH \in \Real^{3N \times 3N}$ 为Hessian矩阵，$\mathbf{g} \in \Real^{3N}$ 为梯度向量，const为不依赖决策变量的常数项。
+
+Hessian矩阵 $\bH$ 的结构为：
+\begin{equation}\label{eq:hessian}
+\bH = \mathbf{S}_u\trans \bar{\bQ}\, \mathbf{S}_u + \bar{\bR}
+\end{equation}
+其中 $\bar{\bQ} = \text{blkdiag}(\bQ, \ldots, \bQ, \bP)$ 为 $6N \times 6N$ 的块对角矩阵（前 $N\!-\!1$ 块为 $\bQ$，最后一块为 $\bP$），$\bar{\bR} = \text{blkdiag}(\bR, \ldots, \bR)$ 为 $3N \times 3N$ 的块对角矩阵，$\mathbf{S}_u$ 为将 $\Delta\mathcal{U}$ 映射到预测状态偏差的系数矩阵。
+
+梯度向量 $\mathbf{g}$ 为：
+\begin{equation}\label{eq:gradient}
+\mathbf{g} = \mathbf{S}_u\trans \bar{\bQ}\, \mathbf{S}_x\, \delta\bx_k
+\end{equation}
+其中 $\mathbf{S}_x$ 为将初始偏差 $\delta\bx_k$ 传播到预测状态偏差的系数矩阵。
+
+控制约束以盒式不等式形式给出。由 $\bu_{k+i} = \bu_{r,k+i} + \delta\bu_{k+i}$ 及式~\eqref{eq:constraints}，得：
+\begin{equation}\label{eq:qp_constraints}
+\bu_{\min} - \bu_{r,k+i} \leq \delta\bu_{k+i} \leq \bu_{\max} - \bu_{r,k+i}, \quad i = 0, \ldots, N-1
+\end{equation}
+堆叠后可写为 $\mathcal{U}_{\text{lb}} \leq \Delta\mathcal{U} \leq \mathcal{U}_{\text{ub}}$。
+
+综上，每步的优化问题为如下标准QP：
+\begin{equation}\label{eq:qp_final}
+\begin{aligned}
+\min_{\Delta\mathcal{U}} \quad & \frac{1}{2} \Delta\mathcal{U}\trans \bH\, \Delta\mathcal{U} + \mathbf{g}\trans \Delta\mathcal{U} \\
+\text{s.t.} \quad & \mathcal{U}_{\text{lb}} \leq \Delta\mathcal{U} \leq \mathcal{U}_{\text{ub}}
+\end{aligned}
+\end{equation}
+
+该QP问题仅有盒式约束，可利用有效集法或内点法高效求解。对于约束线性系统，Bemporad等\cite{Bemporad2002}指出此类QP还可通过显式求解获得分段仿射控制律，为嵌入式实现提供途径。本文采用MATLAB的quadprog函数（有效集法）在线求解，具体性能分析见第~\ref{sec:experiments}节。
+
+%------------------------------------------------------------------------------
+% 终端约束设计
+%------------------------------------------------------------------------------
+\subsection{基于DARE的终端约束设计}\label{sec:dare}
+
+终端权重 $\bP$ 的选取直接影响闭环稳定性。本文采用离散代数Riccati方程（DARE）求解终端权重，其原理是用终端LQR的最优代价矩阵近似无穷时域代价的尾部\cite{Mayne2000,Anderson1990}。
+
+在预测时域末端，将线性化系统 $(\bA_{k+N-1}, \bB_{k+N-1})$ 视为终端局部线性模型，求解如下DARE：
+\begin{equation}\label{eq:dare}
+\bP = \bA_N\trans \bP\, \bA_N - \bA_N\trans \bP\, \bB_N \left(\bB_N\trans \bP\, \bB_N + \bR\right)^{-1} \bB_N\trans \bP\, \bA_N + \bQ
+\end{equation}
+其中 $\bA_N = \bA_{k+N-1}$，$\bB_N = \bB_{k+N-1}$ 为终端时刻的离散化系统矩阵。
+
+DARE~\eqref{eq:dare}的求解可转化为迭代过程：初始化 $\bP^{(0)} = \bQ$，迭代
+\begin{equation}\label{eq:dare_iter}
+\bP^{(j+1)} = \bA_N\trans \bP^{(j)} \bA_N - \bA_N\trans \bP^{(j)} \bB_N \left(\bB_N\trans \bP^{(j)} \bB_N + \bR\right)^{-1} \bB_N\trans \bP^{(j)} \bA_N + \bQ
+\end{equation}
+直至 $\|\bP^{(j+1)} - \bP^{(j)}\| < \varepsilon$（本文取 $\varepsilon = 10^{-6}$）。当 $(\bA_N, \bB_N)$ 可控且 $(\bQ^{1/2}, \bA_N)$ 可观测时，迭代收敛至唯一正定解 $\bP^*$\cite{Anderson1990}。终端代价与终端约束的引入是保证MPC闭环稳定性的关键条件\cite{Mayne2000,Scokaert1999}。
+
+%------------------------------------------------------------------------------
+% 滚动时域控制流程
+%------------------------------------------------------------------------------
+\subsection{滚动时域控制算法}
+
+综合以上设计，LTV-MPC的滚动时域控制流程如算法~\ref{alg:ltvmpc}所示。
+
+\begin{algorithm}[htbp]
+\caption{LTV-MPC滚动时域控制}\label{alg:ltvmpc}
+\begin{algorithmic}[1]
+\Require 参考轨迹 $\{\bx_{r,k}\}$, $\{\bu_{r,k}\}$; 权重 $\bQ, \bR$; 时域 $N$; 采样周期 $T_s$
+\Ensure 控制序列 $\{\bu_k\}$
+\For{$k = 0, 1, 2, \ldots$}
+    \State 获取当前状态 $\bx_k$
+    \State 计算偏差 $\delta\bx_k = \bx_k - \bx_{r,k}$
+    \State 在参考轨迹上计算Jacobian $\bA_{k+i}, \bB_{k+i}$，$i=0,\ldots,N-1$ \Comment{式~\eqref{eq:jacobian_A},~\eqref{eq:jacobian_B}}
+    \State 离散化得 $\bA_{k+i}, \bB_{k+i}$ \Comment{式~\eqref{eq:discretization}}
+    \State 求解DARE得终端权重 $\bP$ \Comment{式~\eqref{eq:dare_iter}}
+    \State 构建Hessian $\bH$ 和梯度 $\mathbf{g}$ \Comment{式~\eqref{eq:hessian},~\eqref{eq:gradient}}
+    \State 求解QP：$\Delta\mathcal{U}^* = \arg\min$ 式~\eqref{eq:qp_final}
+    \State 提取最优控制：$\bu_k = \bu_{r,k} + \delta\bu_k^*$
+    \State 施加 $\bu_k$ 于系统，等待下一采样时刻
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+%------------------------------------------------------------------------------
+% 编队扩展
+%------------------------------------------------------------------------------
+\subsection{编队扩展：Leader-Follower架构}\label{sec:formation}
+
+将单机LTV-MPC扩展至多机编队采用Leader-Follower架构。设编队包含1架Leader和 $n_f$ 架Follower，Leader的参考轨迹为 $\bx_{r}^{L}(t)$，第 $j$ 架Follower的参考轨迹由Leader参考轨迹经过刚性平移变换得到：
+\begin{equation}\label{eq:formation_ref}
+\bx_{r}^{F_j}(t) = \bx_{r}^{L}(t) + \mathbf{d}_j, \quad j = 1, \ldots, n_f
+\end{equation}
+其中 $\mathbf{d}_j \in \Real^3$ 为第 $j$ 架Follower相对于Leader的期望位置偏移量（在惯性系中定义）。
+
+每架飞行器独立运行LTV-MPC控制器，各自跟踪由式~\eqref{eq:formation_ref}生成的参考轨迹。该架构的优点是：
+\begin{itemize}[leftmargin=*]
+    \item \textbf{模块化设计}：每架飞行器使用相同的LTV-MPC控制器，仅需修改参考轨迹生成模块；
+    \item \textbf{分布式实现}：各飞行器仅需Leader的参考轨迹信息，无需实时状态通信（在标称工况下）；
+    \item \textbf{可扩展性}：增加编队规模只需增加Follower数量，控制器结构不变。
+\end{itemize}
+
+需要指出的是，Leader-Follower架构在标称工况下表现良好，但当Leader受到扰动时，误差可能沿编队传播。该鲁棒性问题的分析留待未来工作。

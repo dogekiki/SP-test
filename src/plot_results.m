@@ -13,7 +13,11 @@ function plot_results(data, cfg, save_dir)
         end
     end
     grid on; xlabel('X [m]'); ylabel('Y [m]'); zlabel('Z [m]');
-    legend('参考轨迹', 'Leader', 'Follower 1', 'Follower 2', 'Location', 'best');
+    if isfield(data, 'x_followers')
+        legend('参考轨迹', 'Leader', 'Follower 1', 'Follower 2', 'Location', 'best');
+    else
+        legend('参考轨迹', '实际轨迹', 'Location', 'best');
+    end
     title('3D轨迹跟踪');
     saveas(gcf, fullfile(save_dir, 'trajectory_3d.png'));
     

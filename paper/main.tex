@@ -1,0 +1,115 @@
+% !TEX program = xelatex
+% !TEX encoding = UTF-8 Unicode
+%==============================================================================
+% 基于线性时变模型预测控制的飞行器轨迹跟踪与编队方法
+% 文档类: ctexart (中文支持)
+% 编译方式: XeLaTeX
+%==============================================================================
+\documentclass[a4paper,12pt]{ctexart}
+
+%------------------------------------------------------------------------------
+% 宏包
+%------------------------------------------------------------------------------
+\usepackage{amsmath,amssymb,amsfonts}        % 数学公式
+\usepackage{bm}                               % 粗体数学符号
+\usepackage{graphicx}                         % 图片
+\usepackage{booktabs}                         % 三线表
+\usepackage{multirow}                         % 多行表格
+\usepackage{array}                            % 表格列格式
+\usepackage{geometry}                         % 页面设置
+\usepackage{algorithm}                        % 算法排版
+\usepackage{algpseudocode}                    % 算法伪代码
+\usepackage{hyperref}                         % 超链接
+\usepackage{cite}                             % 引用排序压缩
+\usepackage{caption}                          % 图表标题
+\usepackage{subcaption}                       % 子图
+\usepackage{enumitem}                         % 列表格式
+
+%------------------------------------------------------------------------------
+% 页面设置
+%------------------------------------------------------------------------------
+\geometry{
+    left=2.5cm,
+    right=2.5cm,
+    top=2.5cm,
+    bottom=2.5cm
+}
+
+%------------------------------------------------------------------------------
+% 超链接设置
+%------------------------------------------------------------------------------
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=blue,
+    urlcolor=blue,
+    bookmarksopen=true
+}
+
+%------------------------------------------------------------------------------
+% 图片路径
+%------------------------------------------------------------------------------
+\graphicspath{{../results/}{../results/formation/}{./figures/}}
+
+%------------------------------------------------------------------------------
+% 自定义命令
+%------------------------------------------------------------------------------
+\newcommand{\Real}{\mathbb{R}}
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\bu}{\mathbf{u}}
+\newcommand{\br}{\mathbf{r}}
+\newcommand{\bP}{\mathbf{P}}
+\newcommand{\bQ}{\mathbf{Q}}
+\newcommand{\bR}{\mathbf{R}}
+\newcommand{\bA}{\mathbf{A}}
+\newcommand{\bB}{\mathbf{B}}
+\newcommand{\bH}{\mathbf{H}}
+\newcommand{\bI}{\mathbf{I}}
+\newcommand{\bzero}{\mathbf{0}}
+\newcommand{\trans}{^{\mathrm{T}}}
+
+%------------------------------------------------------------------------------
+% 标题信息
+%------------------------------------------------------------------------------
+\title{\heiti 基于线性时变模型预测控制的飞行器轨迹跟踪与编队方法}
+\author{
+    \kaishu 作者一\quad 作者二\quad 作者三\\[6pt]
+    \small （单位名称，城市~邮编）
+}
+\date{}
+
+%==============================================================================
+% 正文
+%==============================================================================
+\begin{document}
+
+\maketitle
+
+% 摘要与关键词
+\input{sections/01_abstract}
+
+% 引言
+\input{sections/02_intro}
+
+% 动力学模型
+\input{sections/03_model}
+
+% LTV-MPC 控制器设计
+\input{sections/04_mpc}
+
+% 参考轨迹生成
+\input{sections/05_trajectory}
+
+% 仿真实验
+\input{sections/06_experiments}
+
+% 结论
+\input{sections/07_conclusion}
+
+%------------------------------------------------------------------------------
+% 参考文献
+%------------------------------------------------------------------------------
+\bibliographystyle{unsrt}
+\bibliography{references}
+
+\end{document}

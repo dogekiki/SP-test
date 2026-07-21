@@ -49,6 +49,19 @@ body {
 .status-completed, .status-complete, .status-ready { background: #1a3a2a; color: #66bb6a; }
 .status-error, .status-blocked { background: #3a1a1a; color: #ef5350; }
 
+/* WebSocket 连接状态 */
+.ws-status-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #1a1d27; border-radius: 8px; padding: 10px 20px;
+    margin-bottom: 16px; border: 1px solid #2a2d37;
+}
+.ws-indicator { font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.ws-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.ws-dot.connected { background: #66bb6a; box-shadow: 0 0 6px #66bb6a; }
+.ws-dot.disconnected { background: #ef5350; }
+.ws-dot.connecting { background: #ffa726; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
 /* 批次提示 */
 .batch-notice {
     background: #1a2a3a; border: 2px solid #4fc3f7; border-radius: 8px;
@@ -139,10 +152,19 @@ body {
 </head>
 <body>
 <div class="container">
+    <!-- WebSocket 连接状态 -->
+    <div class="ws-status-bar">
+        <span style="font-size:14px;color:#888">实时连接</span>
+        <span class="ws-indicator">
+            <span class="ws-dot disconnected" id="wsDot"></span>
+            <span id="wsText" style="color:#ef5350">未连接</span>
+        </span>
+    </div>
+
     <!-- 需求输入 -->
     <div class="request-card" id="requestCard">
         <h2>自动化开发工作流</h2>
-        <p>输入需求,在 TRAE 中输入"继续"启动流程。每次 TRAE 会批量提问,回答完后在 TRAE 中输入"确认"</p>
+        <p>输入需求,提交后在 TRAE 对话中输入"继续"启动。之后所有问答自动流转,无需终端交互</p>
         <textarea class="request-input" id="requestInput" placeholder="例如: 设计一个飞行器三自由度仿真程序" oninput="document.getElementById('requestBtn').disabled = !this.value.trim()"></textarea>
         <br>
         <button class="request-btn" id="requestBtn" onclick="submitRequest()" disabled>提交需求</button>
@@ -177,8 +199,173 @@ body {
 </div>
 
 <script>
+let ws = null;
+let wsConnected = false;
 let currentBatchId = 0;
-let questionStates = {}; // {id: {selectedOption, answered}}
+let questionStates = {};
+let currentQuestions = [];
+
+// ============ WebSocket 连接 ============
+
+function connectWebSocket() {
+    const wsUrl = 'ws://' + window.location.hostname + ':8766';
+    updateWsStatus('connecting');
+
+    try {
+        ws = new WebSocket(wsUrl);
+    } catch (e) {
+        updateWsStatus('disconnected');
+        setTimeout(connectWebSocket, 3000);
+        return;
+    }
+
+    ws.onopen = function() {
+        wsConnected = true;
+        updateWsStatus('connected');
+    };
+
+    ws.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            handleWsMessage(data);
+        } catch (e) {}
+    };
+
+    ws.onclose = function() {
+        wsConnected = false;
+        updateWsStatus('disconnected');
+        setTimeout(connectWebSocket, 3000);
+    };
+
+    ws.onerror = function() {
+        wsConnected = false;
+        updateWsStatus('disconnected');
+    };
+}
+
+function updateWsStatus(status) {
+    const dot = document.getElementById('wsDot');
+    const text = document.getElementById('wsText');
+    if (status === 'connected') {
+        dot.className = 'ws-dot connected';
+        text.textContent = '已连接';
+        text.style.color = '#66bb6a';
+    } else if (status === 'connecting') {
+        dot.className = 'ws-dot connecting';
+        text.textContent = '连接中...';
+        text.style.color = '#ffa726';
+    } else {
+        dot.className = 'ws-dot disconnected';
+        text.textContent = '未连接(重连中)';
+        text.style.color = '#ef5350';
+    }
+}
+
+function handleWsMessage(data) {
+    switch(data.type) {
+        case 'init':
+            handleInit(data);
+            break;
+        case 'questions':
+            handleQuestions(data);
+            break;
+        case 'update':
+            handleUpdate(data);
+            break;
+        case 'status':
+            handleStatus(data.status);
+            break;
+        case 'log':
+            addLogEntry(data.log);
+            break;
+        case 'batch_complete':
+            showBatchComplete();
+            break;
+        case 'reset':
+            handleReset();
+            break;
+        case 'request':
+            // 前端已提交,无需处理
+            break;
+    }
+}
+
+function handleInit(data) {
+    if (data.request) {
+        showRequestSubmitted(data.request.text);
+    }
+    if (data.status) {
+        handleStatus(data.status);
+    }
+    if (data.logs && data.logs.length > 0) {
+        data.logs.forEach(l => addLogEntry(l));
+    }
+    if (data.history && data.history.length > 0) {
+        renderHistory(data.history);
+    }
+    if (data.questions && data.questions.length > 0) {
+        currentBatchId = data.batch_id;
+        currentQuestions = data.questions;
+        renderQuestions(data);
+    }
+    if (data.batch_ready) {
+        showBatchComplete();
+    }
+}
+
+function handleQuestions(data) {
+    if (data.batch_id !== currentBatchId) {
+        currentBatchId = data.batch_id;
+        questionStates = {};
+    }
+    currentQuestions = data.questions;
+    renderQuestions(data);
+}
+
+function handleUpdate(data) {
+    if (!currentQuestions || currentQuestions.length === 0) return;
+    currentQuestions.forEach(q => {
+        const card = document.getElementById('qcard_' + q.id);
+        if (!card) return;
+        const isAnswered = data.answers && data.answers[String(q.id)] !== undefined;
+        if (isAnswered && !card.classList.contains('answered')) {
+            card.classList.add('answered');
+            const status = document.getElementById('qstatus_' + q.id);
+            if (status) { status.className = 'q-status q-status-answered'; status.textContent = '已回答'; }
+            const body = document.getElementById('qbody_' + q.id);
+            if (body) {
+                body.innerHTML = '<div class="q-answered-text">回答: ' + escapeHtml(data.answers[String(q.id)]) + '</div>';
+            }
+        }
+    });
+    if (data.batch_ready) {
+        showBatchComplete();
+    }
+}
+
+function handleStatus(s) {
+    if (!s) return;
+    document.getElementById('stepName').textContent = s.step_name || '等待启动';
+    document.getElementById('stepCounter').textContent = s.step + ' / ' + s.total_steps;
+    const pct = s.total_steps > 0 ? (s.step / s.total_steps * 100) : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    const badge = document.getElementById('statusBadge');
+    badge.textContent = s.status;
+    badge.className = 'status-badge status-' + s.status;
+}
+
+function handleReset() {
+    currentBatchId = 0;
+    questionStates = {};
+    currentQuestions = [];
+    document.getElementById('questionList').style.display = 'none';
+    document.getElementById('batchNotice').style.display = 'none';
+    document.getElementById('logList').innerHTML = '<div style="color:#555;padding:8px 0">暂无日志</div>';
+    document.getElementById('logCount').textContent = '0 条';
+    document.getElementById('historyList').innerHTML = '<div style="color:#555;padding:8px 0">暂无记录</div>';
+}
+
+// ============ 需求提交 ============
 
 async function submitRequest() {
     const text = document.getElementById('requestInput').value.trim();
@@ -187,10 +374,7 @@ async function submitRequest() {
     document.getElementById('requestBtn').textContent = '提交中...';
     try {
         await fetch('/api/request', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({request: text}) });
-        document.getElementById('requestCard').innerHTML = '<div class="request-submitted">需求已提交: ' + escapeHtml(text) + '<br><br>请在 TRAE 对话框中输入 <strong>"继续"</strong> 启动工作流</div>';
-        document.getElementById('progressBar').style.display = 'block';
-        document.getElementById('logSection').style.display = 'block';
-        document.getElementById('historySection').style.display = 'block';
+        showRequestSubmitted(text);
     } catch (e) {
         alert('提交失败: ' + e.message);
         document.getElementById('requestBtn').disabled = false;
@@ -198,31 +382,14 @@ async function submitRequest() {
     }
 }
 
-async function poll() {
-    try { await Promise.all([fetchQuestions(), fetchStatus(), fetchLogs(), fetchHistory()]); } catch(e) {}
+function showRequestSubmitted(text) {
+    document.getElementById('requestCard').innerHTML = '<div class="request-submitted">需求已提交: ' + escapeHtml(text) + '<br><br>请在 TRAE 对话中输入 <strong style="font-size:18px;color:#4fc3f7">"继续"</strong> 启动工作流<br><span style="font-size:13px;color:#888">(仅需这一次，之后所有步骤自动流转)</span></div>';
+    document.getElementById('progressBar').style.display = 'block';
+    document.getElementById('logSection').style.display = 'block';
+    document.getElementById('historySection').style.display = 'block';
 }
 
-async function fetchQuestions() {
-    const resp = await fetch('/api/questions');
-    const data = await resp.json();
-    if (data.batch_id !== currentBatchId) {
-        currentBatchId = data.batch_id;
-        questionStates = {};
-        if (data.questions.length > 0) {
-            renderQuestions(data);
-        } else {
-            document.getElementById('questionList').style.display = 'none';
-            document.getElementById('batchNotice').style.display = 'none';
-        }
-    } else if (data.questions.length > 0) {
-        // 更新已回答状态
-        updateAnsweredStatus(data);
-        // 检查是否全部回答完
-        if (data.batch_ready) {
-            showBatchComplete();
-        }
-    }
-}
+// ============ 问题渲染与回答 ============
 
 function renderQuestions(data) {
     const list = document.getElementById('questionList');
@@ -230,7 +397,7 @@ function renderQuestions(data) {
     list.style.display = 'flex';
     notice.style.display = 'block';
     notice.className = 'batch-notice';
-    notice.innerHTML = '批次 ' + data.batch_id + ' · ' + data.questions[0].step_name + ' · 共 ' + data.questions.length + ' 个问题,请逐一回答';
+    notice.innerHTML = '批次 ' + data.batch_id + ' · ' + (data.step_name || data.questions[0].step_name) + ' · 共 ' + data.questions.length + ' 个问题,请逐一回答';
 
     list.innerHTML = data.questions.map((q, i) => {
         let html = '<div class="q-card" id="qcard_' + q.id + '">';
@@ -258,30 +425,6 @@ function renderQuestions(data) {
     }).join('');
 }
 
-function updateAnsweredStatus(data) {
-    // 不重新渲染已渲染的问题,只更新状态
-    data.questions.forEach(q => {
-        const card = document.getElementById('qcard_' + q.id);
-        if (!card) return;
-        const isAnswered = data.answers && data.answers[String(q.id)] !== undefined;
-        if (isAnswered && !card.classList.contains('answered')) {
-            card.classList.add('answered');
-            const status = document.getElementById('qstatus_' + q.id);
-            if (status) { status.className = 'q-status q-status-answered'; status.textContent = '已回答'; }
-            const body = document.getElementById('qbody_' + q.id);
-            if (body) {
-                body.innerHTML = '<div class="q-answered-text">回答: ' + escapeHtml(data.answers[String(q.id)]) + '</div>';
-            }
-        }
-    });
-}
-
-function showBatchComplete() {
-    const notice = document.getElementById('batchNotice');
-    notice.className = 'batch-complete';
-    notice.innerHTML = '所有问题已回答完毕<div class="hint">请在 TRAE 对话框中输入 <strong>"确认"</strong> 继续</div>';
-}
-
 function selectOption(qid, optIdx) {
     document.querySelectorAll('#qcard_' + qid + ' .option-btn').forEach(b => b.classList.remove('selected'));
     document.getElementById('opt_' + qid + '_' + optIdx).classList.add('selected');
@@ -300,10 +443,9 @@ function clearOption(qid) {
     document.getElementById('qsubmit_' + qid).disabled = !custom.value.trim();
 }
 
-async function submitAnswer(qid) {
+function submitAnswer(qid) {
     let answer = '';
-    const data = await (await fetch('/api/questions')).json();
-    const q = data.questions.find(x => x.id === qid);
+    const q = currentQuestions.find(x => x.id === qid);
     if (!q) return;
 
     if (q.question_type === 'choice' || q.question_type === 'confirm') {
@@ -320,61 +462,102 @@ async function submitAnswer(qid) {
     document.getElementById('qsubmit_' + qid).disabled = true;
     document.getElementById('qsubmit_' + qid).textContent = '提交中...';
 
-    try {
-        const resp = await fetch('/api/answer', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({question_id: qid, answer: answer}) });
-        const result = await resp.json();
-        if (result.batch_ready) { showBatchComplete(); }
-        // 立即更新此问题状态
+    // 通过 WebSocket 发送回答(实时)
+    if (ws && wsConnected) {
+        ws.send(JSON.stringify({
+            type: 'answer',
+            question_id: qid,
+            answer: answer,
+            batch_id: currentBatchId
+        }));
+        // 立即更新 UI
         const card = document.getElementById('qcard_' + qid);
         if (card) card.classList.add('answered');
         const status = document.getElementById('qstatus_' + qid);
         if (status) { status.className = 'q-status q-status-answered'; status.textContent = '已回答'; }
         const body = document.getElementById('qbody_' + qid);
         if (body) body.innerHTML = '<div class="q-answered-text">回答: ' + escapeHtml(answer) + '</div>';
-    } catch (e) {
-        alert('提交失败: ' + e.message);
-        var btn = document.getElementById('qsubmit_' + qid);
-        if (btn) { btn.disabled = false; btn.textContent = '确认此题'; }
+    } else {
+        // WebSocket 未连接, 回退到 HTTP
+        fetch('/api/answer', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({question_id: qid, answer: answer})
+        }).then(r => r.json()).then(result => {
+            const card = document.getElementById('qcard_' + qid);
+            if (card) card.classList.add('answered');
+            const status = document.getElementById('qstatus_' + qid);
+            if (status) { status.className = 'q-status q-status-answered'; status.textContent = '已回答'; }
+            const body = document.getElementById('qbody_' + qid);
+            if (body) body.innerHTML = '<div class="q-answered-text">回答: ' + escapeHtml(answer) + '</div>';
+            if (result.batch_ready) { showBatchComplete(); }
+        }).catch(e => {
+            var btn = document.getElementById('qsubmit_' + qid);
+            if (btn) { btn.disabled = false; btn.textContent = '确认此题'; }
+            alert('提交失败: ' + e.message);
+        });
     }
 }
 
-async function fetchStatus() {
-    const resp = await fetch('/api/status');
-    const s = await resp.json();
-    document.getElementById('stepName').textContent = s.step_name || '等待启动';
-    document.getElementById('stepCounter').textContent = s.step + ' / ' + s.total_steps;
-    const pct = s.total_steps > 0 ? (s.step / s.total_steps * 100) : 0;
-    document.getElementById('progressFill').style.width = pct + '%';
-    const badge = document.getElementById('statusBadge');
-    badge.textContent = s.status;
-    badge.className = 'status-badge status-' + s.status;
+function showBatchComplete() {
+    const notice = document.getElementById('batchNotice');
+    notice.className = 'batch-complete';
+    notice.innerHTML = '所有问题已回答完毕<div class="hint">TRAE 正在自动处理下一步...</div>';
 }
 
-async function fetchLogs() {
-    const resp = await fetch('/api/logs');
-    const data = await resp.json();
+// ============ 日志与历史 ============
+
+function addLogEntry(l) {
+    if (!l) return;
     const list = document.getElementById('logList');
-    document.getElementById('logCount').textContent = data.logs.length + ' 条';
-    if (data.logs.length === 0) { list.innerHTML = '<div style="color:#555;padding:8px 0">暂无日志</div>'; return; }
-    list.innerHTML = data.logs.map(l => '<div class="log-entry"><span class="log-time">' + l.timestamp + '</span><span class="log-type-' + l.type + '">[' + l.type + ']</span><span class="log-message">' + escapeHtml(l.message) + '</span></div>').join('');
+    if (list.querySelector('div[style*="color:#555"]')) {
+        list.innerHTML = '';
+    }
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = '<span class="log-time">' + l.timestamp + '</span><span class="log-type-' + l.type + '">[' + l.type + ']</span><span class="log-message">' + escapeHtml(l.message) + '</span>';
+    list.appendChild(entry);
     list.scrollTop = list.scrollHeight;
+    const count = list.querySelectorAll('.log-entry').length;
+    document.getElementById('logCount').textContent = count + ' 条';
 }
 
-async function fetchHistory() {
-    const resp = await fetch('/api/history');
-    const data = await resp.json();
+function renderHistory(history) {
     const list = document.getElementById('historyList');
-    if (data.history.length === 0) { list.innerHTML = '<div style="color:#555;padding:8px 0">暂无记录</div>'; return; }
-    list.innerHTML = data.history.map(h => '<div class="history-item"><div class="history-q">[' + h.step_name + '] Q: ' + escapeHtml(h.question.substring(0,120)) + (h.question.length>120?'...':'') + '</div><div class="history-a">A: ' + escapeHtml(h.answer) + '</div></div>').join('');
+    if (!history || history.length === 0) { list.innerHTML = '<div style="color:#555;padding:8px 0">暂无记录</div>'; return; }
+    list.innerHTML = history.map(h => '<div class="history-item"><div class="history-q">[' + escapeHtml(h.step_name) + '] Q: ' + escapeHtml(h.question.substring(0,120)) + (h.question.length>120?'...':'') + '</div><div class="history-a">A: ' + escapeHtml(h.answer) + '</div></div>').join('');
+}
+
+// ============ HTTP 轮询回退(WebSocket 断线时, 10秒一次) ============
+
+async function fallbackPoll() {
+    if (wsConnected) return; // WebSocket 连接时跳过
+    try {
+        const [statusResp, logsResp, historyResp] = await Promise.all([
+            fetch('/api/status'),
+            fetch('/api/logs'),
+            fetch('/api/history')
+        ]);
+        const s = await statusResp.json();
+        handleStatus(s);
+        const logData = await logsResp.json();
+        const list = document.getElementById('logList');
+        list.innerHTML = logData.logs.map(l => '<div class="log-entry"><span class="log-time">' + l.timestamp + '</span><span class="log-type-' + l.type + '">[' + l.type + ']</span><span class="log-message">' + escapeHtml(l.message) + '</span></div>').join('');
+        list.scrollTop = list.scrollHeight;
+        document.getElementById('logCount').textContent = logData.logs.length + ' 条';
+        const histData = await historyResp.json();
+        renderHistory(histData.history);
+    } catch(e) {}
 }
 
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;').replace(/\n/g,'<br>');
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;').replace(/\n/g,'<br>');
 }
 
-setInterval(poll, 2000);
-poll();
+// ============ 启动 ============
+connectWebSocket();
+setInterval(fallbackPoll, 10000);
 </script>
 </body>
 </html>

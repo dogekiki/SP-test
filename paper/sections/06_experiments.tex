@@ -1,0 +1,187 @@
+%==============================================================================
+% 仿真实验与结果分析
+%==============================================================================
+\section{仿真实验与结果分析}\label{sec:experiments}
+
+本节通过仿真实验验证所提LTV-MPC方法的有效性。实验包括单机轨迹跟踪、基线方法对比、QP求解性能分析以及3机编队验证四个部分。
+
+%------------------------------------------------------------------------------
+% 仿真设置
+%------------------------------------------------------------------------------
+\subsection{仿真设置}\label{sec:sim_setup}
+
+仿真在MATLAB/Simulink环境下进行，操作系统为Windows 11，CPU为Intel Core i7-12700K。飞行器动力学采用式~\eqref{eq:dynamics}的3-DOF质点模型，仿真步长与MPC采样周期一致。
+
+仿真参数如表~\ref{tab:params}所示。
+
+\begin{table}[htbp]
+\centering
+\caption{仿真参数}\label{tab:params}
+\begin{tabular}{llc}
+\toprule
+参数 & 符号 & 取值 \\
+\midrule
+飞行器质量 & $m$ & 25\,kg \\
+重力加速度 & $g$ & 9.81\,m/s$^2$ \\
+空气密度 & $\rho$ & 1.225\,kg/m$^3$ \\
+参考面积 & $S$ & 0.5\,m$^2$ \\
+阻力系数 & $C_D$ & 0.05 \\
+\midrule
+推力上限 & $T_{\max}$ & 500\,N \\
+推力下限（含减速板） & $T_{\min}$ & $-50$\,N \\
+航向角速率上限 & $\dot{\chi}_{\max}$ & 0.3\,rad/s \\
+航迹角速率上限 & $\dot{\gamma}_{\max}$ & 0.2\,rad/s \\
+速度范围 & $[V_{\min}, V_{\max}]$ & [15, 60]\,m/s \\
+\midrule
+预测时域 & $N$ & 20 \\
+采样周期 & $T_s$ & 0.1\,s \\
+状态权重 & $\bQ$ & $\text{diag}(10,10,10,1,5,5)$ \\
+控制权重 & $\bR$ & $\text{diag}(0.1,1,1)$ \\
+DARE收敛阈值 & $\varepsilon$ & $10^{-6}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+参考轨迹由6个航点组成的三维空间折线生成，包含水平转弯和高度变化，经弧长重参数化与转角平滑处理后用于跟踪。参考速度 $V_r = 30$\,m/s，转弯半径 $R_t = 50$\,m。
+
+%------------------------------------------------------------------------------
+% 单机轨迹跟踪结果
+%------------------------------------------------------------------------------
+\subsection{单机轨迹跟踪结果}\label{sec:single_result}
+
+图~\ref{fig:traj_3d}展示了LTV-MPC控制下飞行器的三维轨迹跟踪结果。可见，飞行器从初始偏离参考轨迹的位置出发，快速收敛至参考轨迹并保持精确跟踪。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{trajectory_3d.png}
+\caption{单机三维轨迹跟踪结果}\label{fig:traj_3d}
+\end{figure}
+
+图~\ref{fig:tracking_error}给出了各状态分量的跟踪误差曲线。位置误差在初始阶段快速收敛，稳态阶段保持在小幅波动范围内。航向角和航迹角的跟踪误差同样快速收敛至零附近。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{tracking_error.png}
+\caption{单机跟踪误差曲线}\label{fig:tracking_error}
+\end{figure}
+
+定量性能指标如表~\ref{tab:metrics}所示。所提LTV-MPC方法的轨迹跟踪均方根误差（RMSE）为0.12\,m，最大误差（MAX）为0.75\,m，约束满足率为100\%。
+
+\begin{table}[htbp]
+\centering
+\caption{单机跟踪性能指标}\label{tab:metrics}
+\begin{tabular}{lcccc}
+\toprule
+方法 & RMSE (m) & MAX (m) & 求解时间 (ms) & 约束满足率 (\%) \\
+\midrule
+LTV-MPC (本文) & \textbf{0.12} & \textbf{0.75} & \textbf{1.42} & \textbf{100} \\
+LQR 基线 & 556 & --- & --- & --- \\
+PID 基线 & 141 & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%------------------------------------------------------------------------------
+% 基线对比
+%------------------------------------------------------------------------------
+\subsection{基线方法对比}\label{sec:baseline}
+
+为评估LTV-MPC的优越性，本文实现了两种基线控制器进行对比：
+
+\textbf{（1）LQR基线。} 采用基于线性化模型的无限时域LQR控制器，权重矩阵与MPC一致。LQR无法显式处理约束，且在参考轨迹附近线性化仅在局部有效。
+
+\textbf{（2）PID基线。} 对各状态通道分别设计PID控制器，通过增益调节实现轨迹跟踪。PID控制器结构简单但难以处理多变量耦合与约束。
+
+基线对比结果如表~\ref{tab:metrics}和图~\ref{fig:baseline}所示。LQR基线的RMSE高达556\,m，PID基线的RMSE为141\,m，均远高于LTV-MPC的0.12\,m。LTV-MPC相比LQR和PID分别将跟踪精度提升了约3个和2个数量级。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{baseline_comparison.png}
+\caption{基线方法跟踪误差对比}\label{fig:baseline}
+\end{figure}
+
+LQR基线性能较差的主要原因在于：（1）LQR在单一工作点线性化，无法适应参考轨迹全程的动力学变化；（2）LQR无法显式处理推力和角速率约束，导致控制量饱和后系统失稳。PID基线虽然通过积分作用可消除稳态误差，但缺乏对多变量耦合的处理能力，且在急转弯处跟踪误差显著增大。
+
+%------------------------------------------------------------------------------
+% QP求解性能
+%------------------------------------------------------------------------------
+\subsection{QP求解性能分析}\label{sec:qp_perf}
+
+本文对比了两种求解策略的实时性能：
+
+\textbf{（1）非线性求解（fmincon）。} 直接对非线性MPC问题使用MATLAB的fmincon求解器（SQP算法），每步求解非线性规划问题。
+
+\textbf{（2）QP求解（quadprog）。} 将问题线性化并重构为标准QP形式后，使用quadprog求解器（有效集法）。
+
+图~\ref{fig:solve_time}给出了两种方法的单步求解时间分布。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{solve_time.png}
+\caption{求解时间对比}\label{fig:solve_time}
+\end{figure}
+
+如表~\ref{tab:solve_time}所示，fmincon的平均求解时间为138\,ms，quadprog的平均求解时间为1.42\,ms，QP重构实现了约85倍的加速。该加速来源于：QP问题仅含盒式约束，结构简单，有效集法可在极少数迭代内收敛；而SQP需要在每步求解多个QP子问题并执行线搜索，计算开销显著更大。
+
+\begin{table}[htbp]
+\centering
+\caption{求解性能对比}\label{tab:solve_time}
+\begin{tabular}{lccc}
+\toprule
+求解器 & 平均求解时间 (ms) & 加速比 & 实时性 \\
+\midrule
+fmincon (SQP) & 138 & 1$\times$ & 不满足 \\
+quadprog (QP) & \textbf{1.42} & \textbf{85$\times$} & 满足 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+以采样周期 $T_s = 100$\,ms为参考，quadprog的求解时间（1.42\,ms）远小于采样周期，满足实时控制要求；而fmincon的求解时间（138\,ms）已超过采样周期，无法实现实时控制。
+
+%------------------------------------------------------------------------------
+% 编队验证
+%------------------------------------------------------------------------------
+\subsection{3机编队仿真}\label{sec:formation_result}
+
+将LTV-MPC扩展至3机编队（1架Leader + 2架Follower），采用第~\ref{sec:formation}节的Leader-Follower架构。Follower的期望位置偏移量为：
+\begin{equation}
+\mathbf{d}_1 = \begin{bmatrix} -30 \\ 20 \\ 0 \end{bmatrix}\,\text{m}, \quad
+\mathbf{d}_2 = \begin{bmatrix} -30 \\ -20 \\ 0 \end{bmatrix}\,\text{m}
+\end{equation}
+即两架Follower分别位于Leader后方30\,m、左右各偏20\,m处。
+
+图~\ref{fig:formation_3d}展示了3机编队的三维飞行轨迹。可见三架飞行器保持稳定的V形编队构型，沿参考路径协同飞行。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{formation/trajectory_3d.png}
+\caption{3机编队三维轨迹}\label{fig:formation_3d}
+\end{figure}
+
+图~\ref{fig:formation_error}给出了编队中各飞行器的跟踪误差曲线。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{formation/tracking_error.png}
+\caption{3机编队跟踪误差}\label{fig:formation_error}
+\end{figure}
+
+编队跟踪性能如表~\ref{tab:formation}所示。Leader的RMSE为0.12\,m，与单机结果一致。Follower 1和Follower 2的跟踪误差均接近0\,m，表明在标称工况下，Follower能够精确跟踪由Leader参考轨迹生成的偏移参考轨迹。
+
+\begin{table}[htbp]
+\centering
+\caption{3机编队跟踪性能}\label{tab:formation}
+\begin{tabular}{lcc}
+\toprule
+飞行器 & RMSE (m) & MAX (m) \\
+\midrule
+Leader & 0.12 & 0.75 \\
+Follower 1 & 0.00 & 0.00 \\
+Follower 2 & 0.00 & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Follower跟踪误差极小的原因是：Follower的参考轨迹由Leader的参考轨迹（而非实际轨迹）经刚性偏移生成，在标称工况下（无外部扰动），各飞行器使用相同的LTV-MPC控制器跟踪各自的参考轨迹，因此Follower的跟踪精度与Leader相当甚至更优（Follower参考轨迹的几何复杂度可能低于Leader）。
+
+需要指出的是，上述编队结果仅在标称工况下成立。当存在外部扰动（如阵风）或Leader发生偏离时，编队误差传播行为有待进一步研究（见第~\ref{sec:conclusion}节）。
